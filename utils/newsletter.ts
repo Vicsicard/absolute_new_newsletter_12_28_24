@@ -1,11 +1,11 @@
-import { APIClient, SendSmtpEmail } from '@getbrevo/brevo'
+import SibApiV3Sdk from '@sendinblue/client'
 
-if (!process.env.BREVO_API_KEY) {
-  throw new Error('Missing BREVO_API_KEY environment variable')
+if (!process.env.SENDINBLUE_API_KEY) {
+  throw new Error('Missing SENDINBLUE_API_KEY environment variable')
 }
 
-const brevoClient = new APIClient()
-brevoClient.authentications['api-key'].apiKey = process.env.BREVO_API_KEY
+const apiInstance = new SibApiV3Sdk.TransactionalEmailsApi()
+apiInstance.setApiKey(SibApiV3Sdk.AccountApiApiKeys.apiKey, process.env.SENDINBLUE_API_KEY)
 
 export async function sendNewsletter(
   to: { email: string }[],
@@ -13,14 +13,14 @@ export async function sendNewsletter(
   htmlContent: string,
   from = { email: 'newsletter@example.com', name: 'Newsletter Service' }
 ) {
-  const sendSmtpEmail = new SendSmtpEmail()
+  const sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail()
   sendSmtpEmail.subject = subject
   sendSmtpEmail.htmlContent = htmlContent
   sendSmtpEmail.sender = from
   sendSmtpEmail.to = to
   
   try {
-    const response = await brevoClient.sendTransacEmail(sendSmtpEmail)
+    const response = await apiInstance.sendTransacEmail(sendSmtpEmail)
     return response
   } catch (error) {
     console.error('Error sending newsletter:', error)
