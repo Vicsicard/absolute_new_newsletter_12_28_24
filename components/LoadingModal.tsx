@@ -1,16 +1,12 @@
-import { Fragment } from 'react'
-import { Dialog, Transition } from '@headlessui/react'
-import { ClipLoader } from 'react-spinners'
+import { Fragment } from 'react';
+import { Dialog, Transition } from '@headlessui/react';
+import { ClipLoader } from 'react-spinners';
+import { LoadingModalProps } from '@/types/modal';
 
-interface LoadingModalProps {
-  isOpen: boolean
-  message?: string
-}
-
-export default function LoadingModal({ isOpen, message = 'Loading...' }: LoadingModalProps) {
+export default function LoadingModal({ isOpen, message = 'Loading...', onClose }: LoadingModalProps) {
   return (
     <Transition.Root show={isOpen} as={Fragment}>
-      <Dialog as="div" className="relative z-50" onClose={() => {}}>
+      <Dialog as="div" className="relative z-50" onClose={onClose}>
         <Transition.Child
           as={Fragment}
           enter="ease-out duration-300"
@@ -48,11 +44,19 @@ export default function LoadingModal({ isOpen, message = 'Loading...' }: Loading
                     </Dialog.Title>
                   </div>
                 </div>
+                <button
+                  type="button"
+                  className="sr-only"
+                  onClick={onClose}
+                  tabIndex={0}
+                >
+                  Close
+                </button>
               </Dialog.Panel>
             </Transition.Child>
           </div>
         </div>
       </Dialog>
     </Transition.Root>
-  )
+  );
 }

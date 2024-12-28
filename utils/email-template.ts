@@ -4,7 +4,7 @@ interface EmailTemplateProps {
   unsubscribeUrl?: string;
 }
 
-export function generateEmailTemplate({
+export function generateEmailHTML({
   content,
   companyName = '',
   unsubscribeUrl = '#'
@@ -53,31 +53,30 @@ export function generateEmailTemplate({
           
           <footer style="
             margin-top: 30px;
-            padding-top: 20px;
-            border-top: 1px solid #eee;
             text-align: center;
-            font-size: 14px;
+            font-size: 12px;
             color: #666;
           ">
-            <p style="margin: 0;">
-              You received this email because you're subscribed to ${companyName} newsletters.
-            </p>
-            <p style="margin: 10px 0;">
-              <a 
-                href="${unsubscribeUrl}"
-                style="
-                  color: #2563eb;
-                  text-decoration: none;
-                "
-              >
-                Unsubscribe
-              </a>
+            <p>
+              To unsubscribe from our newsletters, 
+              <a href="${unsubscribeUrl}" 
+                style="color: #2563eb; text-decoration: none;"
+              >click here</a>
             </p>
           </footer>
         </div>
       </body>
     </html>
   `
+}
+
+export function generatePlainText(content: string): string {
+  // Remove HTML tags and convert to plain text
+  return content
+    .replace(/<[^>]*>/g, '') // Remove HTML tags
+    .replace(/&nbsp;/g, ' ') // Replace &nbsp; with space
+    .replace(/\s+/g, ' ') // Replace multiple spaces with single space
+    .trim()
 }
 
 export function generateUnsubscribeUrl(subscriberId: string, companyId: string): string {

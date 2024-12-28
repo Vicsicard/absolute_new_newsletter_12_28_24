@@ -13,28 +13,31 @@ export interface Database {
         Row: {
           id: string
           created_at: string
-          name: string
-          description: string
+          company_name: string
           industry: string
-          tone: string
-          target_audience: string
+          contact_email: string
+          website_url?: string
+          phone_number?: string
+          target_audience?: string
         }
         Insert: {
           id?: string
           created_at?: string
-          name: string
-          description: string
+          company_name: string
           industry: string
-          tone: string
-          target_audience: string
+          contact_email: string
+          website_url?: string
+          phone_number?: string
+          target_audience?: string
         }
         Update: {
           id?: string
           created_at?: string
-          name?: string
-          description?: string
+          company_name?: string
           industry?: string
-          tone?: string
+          contact_email?: string
+          website_url?: string
+          phone_number?: string
           target_audience?: string
         }
       }
@@ -43,54 +46,237 @@ export interface Database {
           id: string
           created_at: string
           company_id: string
-          subject: string
+          title: string
           content: string
-          status: 'draft' | 'sent'
-          sent_at: string | null
-          image_url: string | null
+          subject: string
+          status: 'draft' | 'sent' | 'failed'
+          sent_at?: string
         }
         Insert: {
           id?: string
           created_at?: string
           company_id: string
-          subject: string
-          content: string
-          status?: 'draft' | 'sent'
-          sent_at?: string | null
-          image_url?: string | null
+          title: string
+          content?: string
+          subject?: string
+          status?: 'draft' | 'sent' | 'failed'
+          sent_at?: string
         }
         Update: {
           id?: string
           created_at?: string
           company_id?: string
-          subject?: string
+          title?: string
           content?: string
-          status?: 'draft' | 'sent'
-          sent_at?: string | null
-          image_url?: string | null
+          subject?: string
+          status?: 'draft' | 'sent' | 'failed'
+          sent_at?: string
         }
       }
-      subscribers: {
+      contacts: {
         Row: {
           id: string
           created_at: string
-          email: string
           company_id: string
-          status: 'active' | 'unsubscribed'
+          email: string
+          name?: string
+          status: 'active' | 'unsubscribed' | 'bounced'
+          unsubscribed_at?: string
+          last_sent_at?: string
         }
         Insert: {
           id?: string
           created_at?: string
-          email: string
           company_id: string
-          status?: 'active' | 'unsubscribed'
+          email: string
+          name?: string
+          status?: 'active' | 'unsubscribed' | 'bounced'
+          unsubscribed_at?: string
+          last_sent_at?: string
         }
         Update: {
           id?: string
           created_at?: string
-          email?: string
           company_id?: string
-          status?: 'active' | 'unsubscribed'
+          email?: string
+          name?: string
+          status?: 'active' | 'unsubscribed' | 'bounced'
+          unsubscribed_at?: string
+          last_sent_at?: string
+        }
+      }
+      newsletter_contacts: {
+        Row: {
+          id: string
+          created_at: string
+          newsletter_id: string
+          contact_id: string
+          status: 'pending' | 'sent' | 'failed' | 'bounced'
+          sent_at?: string
+          error_message?: string
+        }
+        Insert: {
+          id?: string
+          created_at?: string
+          newsletter_id: string
+          contact_id: string
+          status?: 'pending' | 'sent' | 'failed' | 'bounced'
+          sent_at?: string
+          error_message?: string
+        }
+        Update: {
+          id?: string
+          created_at?: string
+          newsletter_id?: string
+          contact_id?: string
+          status?: 'pending' | 'sent' | 'failed' | 'bounced'
+          sent_at?: string
+          error_message?: string
+        }
+      }
+      newsletter_sections: {
+        Row: {
+          id: string
+          created_at: string
+          newsletter_id: string
+          section_number: number
+          title: string
+          content: string
+          image_url?: string
+          status: 'draft' | 'ready' | 'generating'
+        }
+        Insert: {
+          id?: string
+          created_at?: string
+          newsletter_id: string
+          section_number: number
+          title: string
+          content: string
+          image_url?: string
+          status?: 'draft' | 'ready' | 'generating'
+        }
+        Update: {
+          id?: string
+          created_at?: string
+          newsletter_id?: string
+          section_number?: number
+          title?: string
+          content?: string
+          image_url?: string
+          status?: 'draft' | 'ready' | 'generating'
+        }
+      }
+      compiled_newsletters: {
+        Row: {
+          id: string
+          created_at: string
+          newsletter_id: string
+          compiled_content: string
+          compiled_status: 'pending' | 'completed' | 'failed'
+          error_message?: string
+        }
+        Insert: {
+          id?: string
+          created_at?: string
+          newsletter_id: string
+          compiled_content: string
+          compiled_status?: 'pending' | 'completed' | 'failed'
+          error_message?: string
+        }
+        Update: {
+          id?: string
+          created_at?: string
+          newsletter_id?: string
+          compiled_content?: string
+          compiled_status?: 'pending' | 'completed' | 'failed'
+          error_message?: string
+        }
+      }
+      csv_uploads: {
+        Row: {
+          id: string
+          created_at: string
+          company_id: string
+          filename: string
+          status: 'pending' | 'processing' | 'completed' | 'failed'
+          error_message?: string
+          total_rows?: number
+          processed_rows?: number
+        }
+        Insert: {
+          id?: string
+          created_at?: string
+          company_id: string
+          filename: string
+          status?: 'pending' | 'processing' | 'completed' | 'failed'
+          error_message?: string
+          total_rows?: number
+          processed_rows?: number
+        }
+        Update: {
+          id?: string
+          created_at?: string
+          company_id?: string
+          filename?: string
+          status?: 'pending' | 'processing' | 'completed' | 'failed'
+          error_message?: string
+          total_rows?: number
+          processed_rows?: number
+        }
+      }
+      image_generation_history: {
+        Row: {
+          id: string
+          created_at: string
+          newsletter_section_id: string
+          prompt: string
+          image_url?: string
+          status: 'pending' | 'completed' | 'failed'
+          error_message?: string
+        }
+        Insert: {
+          id?: string
+          created_at?: string
+          newsletter_section_id: string
+          prompt: string
+          image_url?: string
+          status?: 'pending' | 'completed' | 'failed'
+          error_message?: string
+        }
+        Update: {
+          id?: string
+          created_at?: string
+          newsletter_section_id?: string
+          prompt?: string
+          image_url?: string
+          status?: 'pending' | 'completed' | 'failed'
+          error_message?: string
+        }
+      }
+      industry_insights: {
+        Row: {
+          id: string
+          created_at: string
+          industry: string
+          content: string
+          source_url?: string
+          published_at: string
+        }
+        Insert: {
+          id?: string
+          created_at?: string
+          industry: string
+          content: string
+          source_url?: string
+          published_at: string
+        }
+        Update: {
+          id?: string
+          created_at?: string
+          industry?: string
+          content?: string
+          source_url?: string
+          published_at?: string
         }
       }
     }

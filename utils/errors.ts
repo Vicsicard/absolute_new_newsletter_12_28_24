@@ -29,6 +29,13 @@ export class NotFoundError extends APIError {
   }
 }
 
+export class DatabaseError extends APIError {
+  constructor(message: string = 'Database operation failed') {
+    super(message, 500);
+    this.name = 'DatabaseError';
+  }
+}
+
 export function handleError(error: unknown) {
   if (error instanceof APIError) {
     return new Response(JSON.stringify({ error: error.message }), {

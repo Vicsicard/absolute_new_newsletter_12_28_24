@@ -1,11 +1,6 @@
-import { Fragment } from 'react'
-import { Dialog, Transition } from '@headlessui/react'
-
-interface ErrorModalProps {
-  isOpen: boolean
-  onClose: () => void
-  error: string
-}
+import { Fragment } from 'react';
+import { Dialog, Transition } from '@headlessui/react';
+import { ErrorModalProps } from '@/types/modal';
 
 export default function ErrorModal({ isOpen, onClose, error }: ErrorModalProps) {
   return (

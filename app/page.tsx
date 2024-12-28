@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, FormEvent } from 'react';
+import { useState, FormEvent, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { validateForm } from '@/utils/validation';
 import LoadingModal from '@/components/LoadingModal';
@@ -11,87 +11,78 @@ import { FormErrors } from '@/types/form';
 export default function Home() {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
-  const [showModal, setShowModal] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [isSuccess, setIsSuccess] = useState(false);
   const [email, setEmail] = useState('');
   const [formErrors, setFormErrors] = useState<FormErrors>({});
+  const formRef = useRef<HTMLFormElement>(null);
 
-  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    
+    // Reset all states
     setIsLoading(true);
-    setShowModal(true);
     setError(null);
+    setSuccess(null);
     setFormErrors({});
 
-    const form = e.currentTarget;
-    const formData = new FormData(form);
-    setEmail(formData.get('contact_email') as string);
-
-    const errors = validateForm(formData);
-    if (Object.keys(errors).length > 0) {
-      setFormErrors(errors);
-      setIsLoading(false);
-      setShowModal(false);
-      return;
-    }
-
     try {
-      console.log('Submitting form data...');
+      const formData = new FormData(e.target as HTMLFormElement);
+      const errors = validateForm(formData);
+      if (Object.keys(errors).length > 0) {
+        setFormErrors(errors);
+        throw new Error('Please fix the form errors');
+      }
+
       const response = await fetch('/api/onboarding', {
         method: 'POST',
         body: formData,
-        signal: AbortSignal.timeout(5 * 60 * 1000)
       });
 
+      console.log('Submitting form data...', Object.fromEntries(formData));
+
       if (!response.ok) {
-        if (response.status === 504) {
-          throw new Error('Request timed out. Please try again.');
-        }
-        const errorText = await response.text();
-        console.error('Error response:', errorText);
-        try {
-          const errorData = JSON.parse(errorText);
-          throw new Error(errorData.message || `Server error: ${response.status}`);
-        } catch (e) {
-          throw new Error(`Server error: ${response.status}`);
-        }
+        throw new Error('Failed to submit form');
       }
 
-      const data = await response.json();
-      console.log('Response data:', data);
+      console.log('Response status:', response.status);
+      const responseText = await response.text();
+      console.log('Raw response:', responseText);
+
+      const data = JSON.parse(responseText);
+      console.log('Parsed response data:', data);
       
       if (data.success) {
-        setIsSuccess(true);
-        setSuccess(data.message || 'Successfully processed your request');
-        if (data.data?.company_id) {
-          // Get the latest newsletter for this company
-          const newsletterResponse = await fetch(`/api/company/${data.data.company_id}/latest-newsletter`);
-          const newsletterData = await newsletterResponse.json();
-          
-          if (newsletterData.success && newsletterData.data?.id) {
-            // Redirect to the newsletter page
-            router.push(`/newsletter/${newsletterData.data.id}`);
-          } else {
-            throw new Error('Failed to get newsletter ID');
-          }
+        const email = formData.get('contact_email') as string;
+        setSuccess(
+          `Thank you for signing up!\n\n` +
+          `A draft of your newsletter will be emailed to ${email} within the next hour.\n` +
+          `Please check your spam folder if you don't see it in your inbox.\n\n` +
+          `The email will include instructions for uploading your contact list once you're ready to send the newsletter.`
+        );
+        
+        // Clear the form using the form reference
+        if (formRef.current) {
+          formRef.current.reset();
         }
       } else {
         throw new Error(data.message || 'Unknown error occurred');
       }
     } catch (error) {
       console.error('Detailed error:', error);
-      setError(error instanceof Error ? error.message : 'Failed to process request');
-      setIsSuccess(false);
+      if (error instanceof Error && error.name === 'AbortError') {
+        setError('Request timed out. Please try again.');
+      } else if (error instanceof Error) {
+        setError(error.message);
+      } else {
+        setError('Failed to process request');
+      }
     } finally {
       setIsLoading(false);
-      setShowModal(false);
     }
   };
 
   const handleCloseModal = () => {
-    setShowModal(false);
     setError(null);
     setSuccess(null);
   };
@@ -104,15 +95,16 @@ export default function Home() {
             <div className="divide-y divide-gray-200">
               <div className="py-8 text-base leading-6 space-y-4 text-gray-700 sm:text-lg sm:leading-7">
                 <h2 className="text-2xl font-bold mb-8 text-center text-gray-900">Newsletter Setup</h2>
-                <form onSubmit={handleSubmit} className="space-y-6">
+                <form ref={formRef} onSubmit={handleSubmit} className="space-y-6">
                   <div>
                     <label htmlFor="company_name" className="block text-sm font-medium text-gray-700">Company Name</label>
                     <input
                       type="text"
                       name="company_name"
                       id="company_name"
-                      className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm ${
-                        formErrors.company_name ? 'border-red-500' : ''
+                      required
+                      className={`mt-1 block w-full rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm ${
+                        formErrors.company_name ? 'border-red-500' : 'border-gray-300'
                       }`}
                     />
                     {formErrors.company_name && (
@@ -126,8 +118,8 @@ export default function Home() {
                       type="url"
                       name="website_url"
                       id="website_url"
-                      className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm ${
-                        formErrors.website_url ? 'border-red-500' : ''
+                      className={`mt-1 block w-full rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm ${
+                        formErrors.website_url ? 'border-red-500' : 'border-gray-300'
                       }`}
                     />
                     {formErrors.website_url && (
@@ -141,8 +133,9 @@ export default function Home() {
                       type="email"
                       name="contact_email"
                       id="contact_email"
-                      className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm ${
-                        formErrors.contact_email ? 'border-red-500' : ''
+                      required
+                      className={`mt-1 block w-full rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm ${
+                        formErrors.contact_email ? 'border-red-500' : 'border-gray-300'
                       }`}
                     />
                     {formErrors.contact_email && (
@@ -156,8 +149,8 @@ export default function Home() {
                       type="tel"
                       name="phone_number"
                       id="phone_number"
-                      className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm ${
-                        formErrors.phone_number ? 'border-red-500' : ''
+                      className={`mt-1 block w-full rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm ${
+                        formErrors.phone_number ? 'border-red-500' : 'border-gray-300'
                       }`}
                     />
                     {formErrors.phone_number && (
@@ -171,8 +164,9 @@ export default function Home() {
                       type="text"
                       name="industry"
                       id="industry"
-                      className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm ${
-                        formErrors.industry ? 'border-red-500' : ''
+                      required
+                      className={`mt-1 block w-full rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm ${
+                        formErrors.industry ? 'border-red-500' : 'border-gray-300'
                       }`}
                     />
                     {formErrors.industry && (
@@ -186,8 +180,10 @@ export default function Home() {
                       type="text"
                       name="target_audience"
                       id="target_audience"
-                      className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm ${
-                        formErrors.target_audience ? 'border-red-500' : ''
+                      required
+                      placeholder="e.g., Small Business Owners, Marketing Professionals"
+                      className={`mt-1 block w-full rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm ${
+                        formErrors.target_audience ? 'border-red-500' : 'border-gray-300'
                       }`}
                     />
                     {formErrors.target_audience && (
@@ -200,9 +196,11 @@ export default function Home() {
                     <textarea
                       name="audience_description"
                       id="audience_description"
+                      required
                       rows={3}
-                      className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm ${
-                        formErrors.audience_description ? 'border-red-500' : ''
+                      placeholder="Describe your target audience in detail..."
+                      className={`mt-1 block w-full rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm ${
+                        formErrors.audience_description ? 'border-red-500' : 'border-gray-300'
                       }`}
                     />
                     {formErrors.audience_description && (
@@ -210,62 +208,16 @@ export default function Home() {
                     )}
                   </div>
 
-                  <div>
-                    <label htmlFor="newsletter_objectives" className="block text-sm font-medium text-gray-700">Newsletter Objectives</label>
-                    <textarea
-                      name="newsletter_objectives"
-                      id="newsletter_objectives"
-                      rows={3}
-                      className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm ${
-                        formErrors.newsletter_objectives ? 'border-red-500' : ''
-                      }`}
-                    />
-                    {formErrors.newsletter_objectives && (
-                      <p className="mt-2 text-sm text-red-600">{formErrors.newsletter_objectives}</p>
-                    )}
-                  </div>
-
-                  <div>
-                    <label htmlFor="primary_cta" className="block text-sm font-medium text-gray-700">Primary Call to Action</label>
-                    <input
-                      type="text"
-                      name="primary_cta"
-                      id="primary_cta"
-                      className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm ${
-                        formErrors.primary_cta ? 'border-red-500' : ''
-                      }`}
-                    />
-                    {formErrors.primary_cta && (
-                      <p className="mt-2 text-sm text-red-600">{formErrors.primary_cta}</p>
-                    )}
-                  </div>
-
-                  <div>
-                    <label htmlFor="contact_list" className="block text-sm font-medium text-gray-700">Contact List (CSV)</label>
-                    <input
-                      type="file"
-                      name="contact_list"
-                      id="contact_list"
-                      accept=".csv"
-                      className={`mt-1 block w-full ${
-                        formErrors.contact_list ? 'border-red-500' : ''
-                      }`}
-                    />
-                    {formErrors.contact_list && (
-                      <p className="mt-2 text-sm text-red-600">{formErrors.contact_list}</p>
-                    )}
-                  </div>
-
                   <div className="pt-5">
-                    <div className="flex justify-end">
-                      <button
-                        type="submit"
-                        disabled={isLoading}
-                        className="ml-3 inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
-                      >
-                        {isLoading ? 'Processing...' : 'Submit'}
-                      </button>
-                    </div>
+                    <button
+                      type="submit"
+                      disabled={isLoading}
+                      className={`w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 ${
+                        isLoading ? 'opacity-50 cursor-not-allowed' : ''
+                      }`}
+                    >
+                      {isLoading ? 'Processing...' : 'Submit'}
+                    </button>
                   </div>
                 </form>
               </div>
@@ -274,26 +226,28 @@ export default function Home() {
         </div>
       </div>
 
-      {showModal && (
-        <div className="fixed z-10 inset-0 overflow-y-auto">
-          <div className="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-            <div className="fixed inset-0 transition-opacity" aria-hidden="true">
-              <div className="absolute inset-0 bg-gray-500 opacity-75"></div>
-            </div>
-            <span className="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
-            <div className="inline-block align-bottom bg-white rounded-lg px-4 pt-5 pb-4 text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-sm sm:w-full sm:p-6">
-              <LoadingModal 
-                isOpen={isLoading} 
-                email={email} 
-                isSuccess={isSuccess} 
-                onClose={handleCloseModal}
-                error={error}
-              />
-              {error && <ErrorModal message={error} onClose={handleCloseModal} />}
-              {success && <SuccessModal message={success} email={email} onClose={handleCloseModal} />}
-            </div>
-          </div>
-        </div>
+      {isLoading && (
+        <LoadingModal 
+          isOpen={true}
+          message="Processing your request..."
+          onClose={() => setIsLoading(false)}
+        />
+      )}
+      
+      {error && !isLoading && (
+        <ErrorModal 
+          isOpen={true}
+          error={error}
+          onClose={handleCloseModal}
+        />
+      )}
+
+      {success && !isLoading && !error && (
+        <SuccessModal 
+          isOpen={true}
+          message={success}
+          onClose={handleCloseModal}
+        />
       )}
     </div>
   );

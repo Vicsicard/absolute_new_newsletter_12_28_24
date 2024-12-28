@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import OpenAI from 'openai';
 import { supabaseAdmin } from '@/utils/supabase-admin';
 import { DatabaseError } from '@/utils/errors';
+import { Database } from '@/types/database';
 
 if (!process.env.OPENAI_API_KEY) {
   throw new Error('Missing OPENAI_API_KEY environment variable');
@@ -21,6 +22,8 @@ interface Section {
   imagePrompt: string;
   imageUrl?: string;
 }
+
+type Newsletter = Database['public']['Tables']['newsletters']['Row'];
 
 export async function POST(req: NextRequest) {
   try {

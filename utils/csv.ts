@@ -1,28 +1,37 @@
 import { parse } from 'csv-parse'
 import { Readable } from 'stream'
+import { Database } from '@/types/supabase'
 
-interface SubscriberData {
+type ContactInsert = Database['public']['Tables']['contacts']['Insert']
+
+interface ContactData {
   email: string;
-  [key: string]: string;
+  name?: string;
+  [key: string]: string | undefined;
 }
 
-export async function parseCSV(fileContent: Buffer): Promise<SubscriberData[]> {
+export async function parseCSV(fileContent: Buffer | string): Promise<ContactData[]> {
   const parser = parse({
     columns: true,
     skip_empty_lines: true,
     trim: true,
   })
 
-  const records: SubscriberData[] = []
-  const stream = Readable.from(fileContent)
+  const records: ContactData[] = []
+  // Ensure we're working with a Buffer
+  const buffer = Buffer.isBuffer(fileContent) ? fileContent : Buffer.from(fileContent)
+  const stream = Readable.from(buffer)
 
   return new Promise((resolve, reject) => {
     stream
       .pipe(parser)
-      .on('data', (record: SubscriberData) => {
+      .on('data', (record: ContactData) => {
         // Validate email format
         if (record.email && isValidEmail(record.email)) {
-          records.push(record)
+          records.push({
+            email: record.email.toLowerCase(),
+            name: record.name,
+          })
         }
       })
       .on('end', () => resolve(records))
@@ -42,14 +51,16 @@ export function validateCSVHeaders(headers: string[]): boolean {
   )
 }
 
-export async function processSubscriberCSV(
+export async function processContactCSV(
   file: Buffer,
   companyId: string
-): Promise<{ email: string; company_id: string }[]> {
-  const subscribers = await parseCSV(file)
+): Promise<ContactInsert[]> {
+  const contacts = await parseCSV(file)
   
-  return subscribers.map(subscriber => ({
-    email: subscriber.email.toLowerCase(),
-    company_id: companyId
+  return contacts.map(contact => ({
+    email: contact.email.toLowerCase(),
+    name: contact.name,
+    company_id: companyId,
+    status: 'active',
   }))
 }
