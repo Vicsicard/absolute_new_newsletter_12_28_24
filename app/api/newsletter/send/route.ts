@@ -61,12 +61,14 @@ export async function POST(req: Request) {
       .eq('id', newsletterId)
       .eq('status', 'ready_to_send')
       .order('section_number', { foreignTable: 'newsletter_sections' })
-      .returns<NewsletterWithRelations>()
       .single();
 
     if (newsletterError || !newsletter) {
       throw new APIError('Failed to fetch newsletter or newsletter not ready to send', 500);
     }
+
+    // Type assertion to ensure newsletter has the correct shape
+    const typedNewsletter = newsletter as NewsletterWithRelations;
 
     // Update to sending status
     const { error: sendingError } = await supabaseAdmin
@@ -127,8 +129,8 @@ export async function POST(req: Request) {
     // Send emails
     const result = await sendBulkEmails(
       emailContacts,
-      newsletter.subject,
-      newsletter.newsletter_sections
+      typedNewsletter.subject,
+      typedNewsletter.newsletter_sections
         .filter(section => section.status === 'active')
         .sort((a, b) => a.section_number - b.section_number)
         .map(section => `
