@@ -1,13 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/utils/supabase-admin';
+import { getSupabaseAdmin } from '@/utils/supabase-admin';
 
-export const runtime = 'nodejs';
+// Configure API route
+export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
 
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const supabaseAdmin = getSupabaseAdmin();
+  
   try {
     const companyId = params.id;
 
@@ -21,7 +24,16 @@ export async function GET(
     // Get the latest newsletter for this company
     const { data: newsletter, error } = await supabaseAdmin
       .from('newsletters')
-      .select('*')
+      .select(`
+        *,
+        sections:newsletter_sections(
+          id,
+          section_number,
+          title,
+          content,
+          image_url
+        )
+      `)
       .eq('company_id', companyId)
       .order('created_at', { ascending: false })
       .limit(1)
@@ -40,6 +52,11 @@ export async function GET(
         { success: false, message: 'No newsletter found' },
         { status: 404 }
       );
+    }
+
+    // Sort sections by section_number if they exist
+    if (newsletter.sections) {
+      newsletter.sections.sort((a, b) => a.section_number - b.section_number);
     }
 
     return NextResponse.json({
