@@ -22,7 +22,7 @@ export type CsvUploadStatus = 'pending' | 'processing' | 'completed' | 'failed';
 
 // Relationship types
 export interface NewsletterWithCompany extends Newsletter {
-  company: Pick<Company, 'id' | 'company_name' | 'industry' | 'contact_email' | 'target_audience' | 'audience_description'>;
+  company: Pick<Company, 'company_name' | 'industry' | 'target_audience' | 'audience_description'>;
 }
 
 export interface NewsletterWithRelations extends Newsletter {
