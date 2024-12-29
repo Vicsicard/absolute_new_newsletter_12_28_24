@@ -4,7 +4,7 @@ import type { Database } from '@/types/database';
 // Base types from database
 export type Company = Database['public']['Tables']['companies']['Row'];
 export type Newsletter = Database['public']['Tables']['newsletters']['Row'];
-export type NewsletterSection = Omit<Database['public']['Tables']['newsletter_sections']['Row'], 'id'> & { id?: string };
+export type NewsletterSection = Database['public']['Tables']['newsletter_sections']['Row'];
 export type Contact = Database['public']['Tables']['contacts']['Row'];
 export type NewsletterContact = Database['public']['Tables']['newsletter_contacts']['Row'];
 export type ImageGenerationHistory = Database['public']['Tables']['image_generation_history']['Row'];

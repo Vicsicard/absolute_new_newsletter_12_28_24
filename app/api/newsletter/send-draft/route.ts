@@ -1,11 +1,15 @@
 import { NextResponse } from 'next/server';
-import { sendBulkEmails } from '@/utils/email';
 import { getSupabaseAdmin } from '@/utils/supabase-admin';
-import type { 
+import { sendBulkEmail } from '@/utils/email';
+import type { Database } from '@/types/database';
+import { 
   EmailContact, 
   NewsletterStatus, 
   DraftStatus,
-  NewsletterWithRelations
+  NewsletterWithRelations,
+  Newsletter,
+  Company,
+  NewsletterSection
 } from '@/types/email';
 import { APIError } from '@/utils/errors';
 
@@ -17,16 +21,19 @@ if (!process.env.BREVO_API_KEY || !process.env.BREVO_SENDER_EMAIL || !process.en
 export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
 
-export async function POST(req: Request) {
+type NewsletterWithJoins = Newsletter & {
+  company: Pick<Company, 'company_name' | 'industry' | 'target_audience' | 'audience_description' | 'contact_email'>;
+  newsletter_sections: NewsletterSection[];
+};
+
+export async function POST(request: Request) {
   const supabaseAdmin = getSupabaseAdmin();
-  let newsletterId: string | undefined;
 
   try {
-    const body = await req.json();
-    newsletterId = body.newsletterId;
+    const { newsletterId } = await request.json();
 
     if (!newsletterId) {
-      throw new APIError('Missing newsletter ID', 400);
+      throw new APIError('Missing newsletterId', 400);
     }
 
     // Get newsletter with sections and company info
@@ -46,7 +53,7 @@ export async function POST(req: Request) {
         last_sent_status,
         created_at,
         updated_at,
-        company:companies (
+        company:companies!inner (
           company_name,
           industry,
           target_audience,
@@ -70,7 +77,7 @@ export async function POST(req: Request) {
       .eq('draft_status', 'pending')
       .eq('status', 'draft')
       .order('section_number', { foreignTable: 'newsletter_sections' })
-      .single();
+      .single() as unknown as { data: NewsletterWithJoins | null; error: any };
 
     if (newsletterError || !newsletter) {
       console.error('Newsletter error:', newsletterError);
@@ -83,63 +90,73 @@ export async function POST(req: Request) {
 
     // Transform the response to match NewsletterWithRelations type
     const typedNewsletter: NewsletterWithRelations = {
-      ...newsletter,
-      company: newsletter.company,
-      newsletter_sections: newsletter.newsletter_sections || []
+      id: newsletter.id,
+      company_id: newsletter.company_id,
+      subject: newsletter.subject,
+      draft_status: newsletter.draft_status,
+      draft_recipient_email: newsletter.draft_recipient_email,
+      draft_sent_at: newsletter.draft_sent_at,
+      status: newsletter.status,
+      sent_at: newsletter.sent_at,
+      sent_count: newsletter.sent_count,
+      failed_count: newsletter.failed_count,
+      last_sent_status: newsletter.last_sent_status,
+      created_at: newsletter.created_at,
+      updated_at: newsletter.updated_at,
+      company: {
+        company_name: newsletter.company.company_name,
+        industry: newsletter.company.industry,
+        target_audience: newsletter.company.target_audience,
+        audience_description: newsletter.company.audience_description,
+        contact_email: newsletter.company.contact_email
+      },
+      newsletter_sections: newsletter.newsletter_sections.map(section => ({
+        newsletter_id: section.newsletter_id,
+        section_number: section.section_number,
+        title: section.title,
+        content: section.content,
+        image_prompt: section.image_prompt,
+        image_url: section.image_url,
+        status: section.status,
+        created_at: null,
+        updated_at: null
+      }))
     };
 
-    // Send email to draft recipient
-    const result = await sendBulkEmails(
-      [{ email: newsletter.draft_recipient_email }],
-      typedNewsletter.subject,
-      typedNewsletter.newsletter_sections
-        .filter(section => section.status === 'active')
-        .sort((a, b) => a.section_number - b.section_number)
-        .map(section => `
-          <h2>${section.title}</h2>
-          ${section.content}
-          ${section.image_url ? `<img src="${section.image_url}" alt="${section.title}">` : ''}
-        `).join('\n')
-    );
-
-    // Update newsletter draft status based on results
-    const updates = {
-      draft_status: result.failed.length === 0 ? 'sent' : 'failed',
-      draft_sent_at: result.failed.length === 0 ? new Date().toISOString() : null,
-      status: result.failed.length === 0 ? 'draft_sent' : 'draft',
-      last_sent_status: result.failed.length === 0 
-        ? 'Successfully sent draft to recipient' 
-        : `Failed to send draft: ${result.failed[0]?.error || 'Unknown error'}`
+    // Send draft to recipient
+    const contact: EmailContact = {
+      email: typedNewsletter.draft_recipient_email,
+      name: null
     };
 
+    const { success, error } = await sendBulkEmail(typedNewsletter, [contact]);
+
+    if (!success) {
+      throw new APIError(error?.message || 'Failed to send draft newsletter', 500);
+    }
+
+    // Update newsletter status
     const { error: updateError } = await supabaseAdmin
       .from('newsletters')
-      .update(updates)
+      .update({
+        draft_status: 'sent' as DraftStatus,
+        draft_sent_at: new Date().toISOString(),
+        last_sent_status: success ? 'success' : 'failed'
+      })
       .eq('id', newsletterId);
 
     if (updateError) {
-      throw new APIError('Failed to update newsletter draft status', 500);
+      console.error('Update error:', updateError);
+      throw new APIError('Failed to update newsletter status', 500);
     }
 
-    return NextResponse.json({
-      success: true,
-      data: {
-        ...updates,
-        newsletter_id: newsletterId
-      }
-    });
+    return NextResponse.json({ success: true });
 
   } catch (error) {
+    console.error('Error sending draft newsletter:', error);
     if (error instanceof APIError) {
-      return NextResponse.json(
-        { success: false, message: error.message },
-        { status: error.status }
-      );
+      return NextResponse.json({ success: false, error: error.message }, { status: error.status });
     }
-
-    return NextResponse.json(
-      { success: false, message: 'Internal server error' },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: 'Internal server error' }, { status: 500 });
   }
 }

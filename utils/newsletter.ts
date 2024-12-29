@@ -1,8 +1,20 @@
 import OpenAI from 'openai';
+import type { Database } from '@/types/database';
 import { NewsletterWithCompany, NewsletterSection, NewsletterSectionStatus } from '@/types/email';
 import { getSupabaseAdmin } from './supabase-admin';
 import { APIError } from './errors';
 import { generateImage } from './image';
+
+// Use Supabase types
+type NewsletterSectionInsert = Database['public']['Tables']['newsletter_sections']['Insert'];
+type NewsletterSectionRow = Database['public']['Tables']['newsletter_sections']['Row'];
+
+interface GenerateOptions {
+  companyName: string;
+  industry: string;
+  targetAudience?: string;
+  audienceDescription?: string;
+}
 
 if (!process.env.OPENAI_API_KEY) {
   throw new Error('Missing OPENAI_API_KEY environment variable');
@@ -12,18 +24,11 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
-interface GenerateOptions {
-  companyName: string;
-  industry: string;
-  targetAudience?: string;
-  audienceDescription?: string;
-}
-
 export async function generateNewsletter(
   newsletterId: string,
   customPrompt?: string,
   options?: GenerateOptions
-): Promise<NewsletterSection[]> {
+): Promise<NewsletterSectionRow[]> {
   const supabaseAdmin = getSupabaseAdmin();
   
   try {
@@ -65,7 +70,7 @@ export async function generateNewsletter(
       "Share success stories or case studies"
     ];
 
-    const sections: NewsletterSection[] = [];
+    const sections: NewsletterSectionInsert[] = [];
 
     for (let i = 0; i < sectionPrompts.length; i++) {
       const prompt = sectionPrompts[i];
@@ -103,15 +108,26 @@ export async function generateNewsletter(
         image_prompt: imagePrompt,
         image_url: imageUrl,
         status: 'active' as NewsletterSectionStatus,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        created_at: null,
+        updated_at: null
       });
 
       // Add delay between API calls
       await new Promise(resolve => setTimeout(resolve, 1000));
     }
 
-    return sections;
+    // Insert sections into database and get back the rows with IDs
+    const { data, error } = await supabaseAdmin
+      .from('newsletter_sections')
+      .insert(sections)
+      .select()
+      .returns<NewsletterSectionRow[]>();
+
+    if (error || !data) {
+      throw new APIError('Failed to insert newsletter sections into database', 500);
+    }
+
+    return data;
 
   } catch (error) {
     console.error('Error generating newsletter:', error);
