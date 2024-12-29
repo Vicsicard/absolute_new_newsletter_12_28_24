@@ -12,7 +12,8 @@ import type {
 } from '@/types/email';
 import { APIError } from '@/utils/errors';
 
-interface NewsletterContactWithRelations extends NewsletterContact {
+// Define the shape of the joined data from Supabase
+interface NewsletterContactWithRelations extends Omit<NewsletterContact, 'contact_id'> {
   contacts: Contact;
 }
 
@@ -84,7 +85,7 @@ export async function POST(req: Request) {
         error_message,
         created_at,
         updated_at,
-        contacts (
+        contacts!inner (
           id,
           email,
           name,
@@ -92,14 +93,19 @@ export async function POST(req: Request) {
         )
       `)
       .eq('newsletter_id', newsletterId)
-      .eq('status', 'pending');
+      .eq('status', 'pending')
+      .returns<NewsletterContactWithRelations[]>();
 
     if (contactsError) {
       throw new APIError('Failed to fetch contacts', 500);
     }
 
+    if (!contacts) {
+      throw new APIError('No contacts found for this newsletter', 404);
+    }
+
     // Filter out inactive contacts and format for sending
-    const emailContacts: EmailContact[] = (contacts as NewsletterContactWithRelations[] || [])
+    const emailContacts: EmailContact[] = contacts
       .filter(c => c.contacts?.status === 'active')
       .map(c => ({
         email: c.contacts.email,
@@ -141,7 +147,7 @@ export async function POST(req: Request) {
       const failedEmails = new Set(result.data.results.failed.map(f => f.email));
 
       // Prepare contact status updates
-      const contactUpdates = (contacts as NewsletterContactWithRelations[]).map(contact => ({
+      const contactUpdates = contacts.map(contact => ({
         id: contact.id,
         status: successfulEmails.has(contact.contacts.email) ? 'sent' as const
           : failedEmails.has(contact.contacts.email) ? 'failed' as const
