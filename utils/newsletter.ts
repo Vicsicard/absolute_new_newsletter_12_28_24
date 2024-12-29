@@ -11,6 +11,12 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
+type Company = Database['public']['Tables']['companies']['Row'];
+type NewsletterWithCompany = {
+  id: string;
+  companies: Company;
+};
+
 type DbNewsletterSection = Database['public']['Tables']['newsletter_sections']['Row'];
 
 export interface NewsletterSection {
@@ -21,6 +27,7 @@ export interface NewsletterSection {
   content: string;
   image_prompt?: string;
   image_url?: string;
+  status?: 'active' | 'deleted';
   created_at?: string;
   updated_at?: string;
 }
@@ -55,6 +62,7 @@ export async function generateNewsletter(
       const { data: newsletter, error: newsletterError } = await supabaseAdmin
         .from('newsletters')
         .select(`
+          id,
           companies (
             company_name,
             industry,
@@ -63,9 +71,10 @@ export async function generateNewsletter(
           )
         `)
         .eq('id', newsletterId)
+        .returns<NewsletterWithCompany>()
         .single();
 
-      if (newsletterError || !newsletter || !newsletter.companies) {
+      if (newsletterError || !newsletter) {
         throw new APIError('Failed to fetch newsletter data', 500);
       }
 
@@ -99,55 +108,32 @@ export async function generateNewsletter(
         }]
       });
 
-      const content = completion.choices[0].message.content || '';
-      const [title, ...contentParts] = content.split('\n').filter(Boolean);
+      const response = completion.choices[0]?.message?.content;
+      if (!response) {
+        throw new APIError('Failed to generate newsletter content', 500);
+      }
 
-      // Generate image prompt
-      const imagePromptCompletion = await openai.chat.completions.create({
-        model: "gpt-4",
-        messages: [{
-          role: "system",
-          content: "You are an expert at creating prompts for DALL-E 3 to generate ultra-realistic photographic images. Create prompts that result in high-quality, photorealistic imagery that looks like it was taken with a professional camera. Focus on objects, environments, and abstract concepts. IMPORTANT RULES: 1) NEVER include people in the images 2) NEVER include any text or writing 3) Always maintain photographic realism - images should look like they were captured by a professional photographer 4) Use natural lighting and professional photography techniques in the descriptions."
-        }, {
-          role: "user",
-          content: `Create a DALL-E 3 prompt for an ultra-realistic photograph that represents: "${title}" for a ${options.industry} company targeting ${options.targetAudience || 'general audience'}.
-            The image must be photorealistic like a professional photograph, without any people or text.
-            Focus on objects, environments, or abstract concepts that symbolize the theme.
-            Use professional photography terms (depth of field, lighting, composition).
-            Make it specific and detailed but keep it under 200 characters.`
-        }]
+      // Extract title and content
+      const lines = response.split('\n').filter(line => line.trim());
+      const title = lines[0].replace(/^#*\s*/, ''); // Remove any markdown heading symbols
+      const content = lines.slice(1).join('\n').trim();
+
+      sections.push({
+        title,
+        content,
+        image_prompt: `Create an image for a newsletter section titled "${title}" about ${options.industry}`,
+        status: 'active'
       });
 
-      const image_prompt = imagePromptCompletion.choices[0].message.content || '';
-
-      try {
-        const imageResponse = await openai.images.generate({
-          prompt: image_prompt,
-          n: 1,
-          size: "1024x1024",
-        });
-
-        sections.push({
-          title: title.replace(/^#+ /, ''), // Remove Markdown headers if present
-          content: contentParts.join('\n'),
-          image_prompt,
-          image_url: imageResponse.data[0]?.url
-        });
-      } catch (imageError) {
-        console.error('Image generation error:', imageError);
-        sections.push({
-          title: title.replace(/^#+ /, ''),
-          content: contentParts.join('\n'),
-          image_prompt,
-          image_url: undefined
-        });
-      }
+      // Add delay between API calls
+      await delay(1000);
     }
 
     return sections;
+
   } catch (error) {
     console.error('Error generating newsletter:', error);
-    throw error instanceof Error ? error : new Error('Failed to generate newsletter');
+    throw error instanceof APIError ? error : new APIError('Failed to generate newsletter', 500);
   }
 }
 
