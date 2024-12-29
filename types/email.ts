@@ -9,10 +9,10 @@ export type Contact = Database['public']['Tables']['contacts']['Row'];
 export type NewsletterContact = Database['public']['Tables']['newsletter_contacts']['Row'];
 
 // Status types
-export type NewsletterStatus = 'draft' | 'pending' | 'sending' | 'sent' | 'failed';
+export type NewsletterStatus = 'draft' | 'pending' | 'sent' | 'failed';
 export type DraftStatus = 'pending' | 'sent' | 'failed';
 export type NewsletterContactStatus = 'pending' | 'sent' | 'failed';
-export type ContactStatus = 'active' | 'inactive' | 'deleted';
+export type ContactStatus = 'active' | 'deleted';
 export type NewsletterSectionStatus = 'active' | 'deleted';
 export type ImageGenerationStatus = 'pending' | 'processing' | 'completed' | 'failed';
 

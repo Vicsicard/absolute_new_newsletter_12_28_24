@@ -11,13 +11,12 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
+type Newsletter = Database['public']['Tables']['newsletters']['Row'];
 type Company = Database['public']['Tables']['companies']['Row'];
-type NewsletterWithCompany = {
-  id: string;
-  companies: Company;
-};
 
-type DbNewsletterSection = Database['public']['Tables']['newsletter_sections']['Row'];
+interface NewsletterWithCompany extends Newsletter {
+  companies: Company;
+}
 
 export interface NewsletterSection {
   id?: string;
@@ -27,7 +26,7 @@ export interface NewsletterSection {
   content: string;
   image_prompt?: string;
   image_url?: string;
-  status?: 'active' | 'deleted';
+  status: 'active' | 'deleted';
   created_at?: string;
   updated_at?: string;
 }
@@ -61,15 +60,7 @@ export async function generateNewsletter(
       // Get company data from newsletter if options not provided
       const { data: newsletter, error: newsletterError } = await supabaseAdmin
         .from('newsletters')
-        .select(`
-          id,
-          companies (
-            company_name,
-            industry,
-            target_audience,
-            audience_description
-          )
-        `)
+        .select('*, companies!inner(*)')
         .eq('id', newsletterId)
         .returns<NewsletterWithCompany>()
         .single();
@@ -95,7 +86,8 @@ export async function generateNewsletter(
 
     const sections: Section[] = [];
 
-    for (const prompt of sectionPrompts) {
+    for (let i = 0; i < sectionPrompts.length; i++) {
+      const prompt = sectionPrompts[i];
       const completion = await openai.chat.completions.create({
         model: "gpt-4",
         messages: [{
@@ -122,7 +114,8 @@ export async function generateNewsletter(
         title,
         content,
         image_prompt: `Create an image for a newsletter section titled "${title}" about ${options.industry}`,
-        status: 'active'
+        status: 'active' as const,
+        section_number: i + 1
       });
 
       // Add delay between API calls
