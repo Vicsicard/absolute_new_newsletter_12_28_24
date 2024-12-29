@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/utils/supabase-admin';
+import type { NewsletterSection } from '@/types/email';
 
 // Configure API route
 export const runtime = 'edge';
@@ -31,7 +32,10 @@ export async function GET(
           section_number,
           title,
           content,
-          image_url
+          image_url,
+          status,
+          created_at,
+          updated_at
         )
       `)
       .eq('company_id', companyId)
@@ -56,7 +60,9 @@ export async function GET(
 
     // Sort sections by section_number if they exist
     if (newsletter.sections) {
-      newsletter.sections.sort((a, b) => a.section_number - b.section_number);
+      newsletter.sections.sort((a: NewsletterSection, b: NewsletterSection) => 
+        a.section_number - b.section_number
+      );
     }
 
     return NextResponse.json({
