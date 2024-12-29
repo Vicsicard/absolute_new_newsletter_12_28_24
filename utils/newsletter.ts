@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import { NewsletterWithCompany, NewsletterSection, Section } from '@/types/email';
+import { NewsletterWithCompany, NewsletterSection } from '@/types/email';
 import { getSupabaseAdmin } from './supabase-admin';
 import { APIError } from './errors';
 
