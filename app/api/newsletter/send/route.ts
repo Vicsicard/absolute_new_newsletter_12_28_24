@@ -129,10 +129,12 @@ export async function POST(req: Request) {
 
     // Update newsletter status based on results
     const updates: Partial<Newsletter> = {
-      status: result.success ? 'sent' : 'failed',
-      sent_count: result.data?.results?.successful.length || 0,
-      failed_count: result.data?.results?.failed.length || 0,
-      last_sent_status: result.message,
+      status: result.failed.length === 0 ? 'sent' : 'failed',
+      sent_count: result.successful.length,
+      failed_count: result.failed.length,
+      last_sent_status: result.failed.length === 0 
+        ? 'Successfully sent to all contacts' 
+        : `Failed to send to ${result.failed.length} contacts`,
       sent_at: new Date().toISOString()
     };
 
@@ -176,8 +178,8 @@ export async function POST(req: Request) {
       success: true,
       message: 'Newsletter sent successfully',
       data: {
-        sent: result.data?.results?.successful.length || 0,
-        failed: result.data?.results?.failed.length || 0
+        sent: result.successful.length,
+        failed: result.failed.length
       }
     });
 
