@@ -26,8 +26,8 @@ export interface NewsletterWithCompany extends Newsletter {
 }
 
 export interface NewsletterWithRelations extends Newsletter {
-  sections: NewsletterSection[];
-  contacts: (NewsletterContact & { contact: Contact })[];
+  company?: Pick<Company, 'company_name' | 'industry' | 'target_audience' | 'audience_description' | 'contact_email'>;
+  newsletter_sections: NewsletterSection[];
 }
 
 // Email specific interfaces

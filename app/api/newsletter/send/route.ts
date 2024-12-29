@@ -37,7 +37,12 @@ export async function POST(req: Request) {
     const { data: newsletter, error: newsletterError } = await supabaseAdmin
       .from('newsletters')
       .select(`
-        *,
+        id,
+        subject,
+        status,
+        created_at,
+        updated_at,
+        company_id,
         company:companies (
           id,
           company_name,
