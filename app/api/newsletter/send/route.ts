@@ -38,11 +38,18 @@ export async function POST(req: Request) {
       .from('newsletters')
       .select(`
         id,
+        company_id,
         subject,
+        draft_status,
+        draft_recipient_email,
+        draft_sent_at,
         status,
+        sent_at,
+        sent_count,
+        failed_count,
+        last_sent_status,
         created_at,
         updated_at,
-        company_id,
         company:companies (
           id,
           company_name,
