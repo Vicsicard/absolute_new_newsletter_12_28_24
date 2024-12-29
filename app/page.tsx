@@ -51,7 +51,7 @@ export default function Home() {
         throw new Error(data.message || 'Failed to submit form');
       }
 
-      setSuccess('Newsletter setup completed! Check your email for the draft.');
+      setSuccess(data.message || 'Newsletter setup completed! Check your email for the draft.');
       if (formRef.current) {
         formRef.current.reset();
       }

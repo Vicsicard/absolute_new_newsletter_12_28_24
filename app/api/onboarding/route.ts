@@ -16,11 +16,12 @@ import type {
 } from '@/types/email';
 
 // Configure API route
-export const runtime = 'edge';
+export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300; // Set max duration to 5 minutes
 
 export async function POST(req: NextRequest) {
+  console.log('Starting onboarding process...');
   const supabaseAdmin = getSupabaseAdmin();
   
   try {
@@ -63,6 +64,8 @@ export async function POST(req: NextRequest) {
       contactsData = formData.get('contacts');
     }
 
+    console.log('Received onboarding data:', jsonData);
+
     // Validate required fields
     const requiredFields = ['company_name', 'industry', 'contact_email'];
     for (const field of requiredFields) {
@@ -72,6 +75,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Create company
+    console.log('Creating company...');
     const { data: company, error: companyError } = await supabaseAdmin
       .from('companies')
       .insert(companyData)
@@ -79,8 +83,11 @@ export async function POST(req: NextRequest) {
       .single();
 
     if (companyError || !company) {
+      console.error('Error creating company:', companyError);
       throw new APIError('Failed to create company', 500);
     }
+
+    console.log('Company created successfully:', company);
 
     // Parse and validate contacts
     let contacts: Array<Partial<Contact>> = [];
@@ -120,11 +127,12 @@ export async function POST(req: NextRequest) {
     }
 
     // Create initial newsletter with draft status
+    console.log('Creating newsletter...');
     const newsletterData: Partial<Newsletter> = {
       company_id: company.id,
       subject: jsonData?.subject || `${company.company_name} Newsletter`,
       draft_status: 'pending' as DraftStatus,
-      draft_recipient_email: 'vicsicard@gmail.com', // Set your email directly for testing
+      draft_recipient_email: company.contact_email,
       draft_sent_at: null,
       status: 'draft' as NewsletterStatus,
       sent_at: null,
@@ -144,7 +152,7 @@ export async function POST(req: NextRequest) {
       .single();
 
     if (newsletterError || !newsletter) {
-      console.error('Failed to create newsletter:', newsletterError);
+      console.error('Error creating newsletter:', newsletterError);
       throw new APIError('Failed to create newsletter', 500);
     }
 
@@ -190,89 +198,57 @@ export async function POST(req: NextRequest) {
       if (newsletterContactsError) {
         throw new APIError('Failed to create newsletter contacts', 500);
       }
-
-      // Generate and send draft newsletter
-      try {
-        const baseUrl = process.env.VERCEL_URL 
-          ? `https://${process.env.VERCEL_URL}`
-          : 'http://localhost:3000';
-
-        console.log('Starting newsletter generation and sending process:', {
-          baseUrl,
-          newsletterId: newsletter.id,
-          companyId: company.id,
-          recipientCount: createdContacts.length
-        });
-
-        // First generate the newsletter content
-        console.log('Step 1: Generating newsletter content...');
-        const generateResponse = await fetch(`${baseUrl}/api/newsletter/generate`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            newsletterId: newsletter.id
-          })
-        });
-
-        if (!generateResponse.ok) {
-          const errorText = await generateResponse.text();
-          console.error('Failed to generate newsletter:', {
-            status: generateResponse.status,
-            statusText: generateResponse.statusText,
-            error: errorText
-          });
-        } else {
-          const generateResult = await generateResponse.json();
-          console.log('Newsletter generated successfully:', generateResult);
-        }
-
-        // Add a delay before sending to ensure content is ready
-        console.log('Waiting for content generation to complete...');
-        await new Promise(resolve => setTimeout(resolve, 5000));
-
-        // Then send the draft
-        console.log('Step 2: Sending draft newsletter...');
-        const sendDraftResponse = await fetch(`${baseUrl}/api/newsletter/send-draft`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            newsletterId: newsletter.id
-          })
-        });
-
-        if (!sendDraftResponse.ok) {
-          const errorText = await sendDraftResponse.text();
-          console.error('Failed to send draft:', {
-            status: sendDraftResponse.status,
-            statusText: sendDraftResponse.statusText,
-            error: errorText
-          });
-        } else {
-          const sendResult = await sendDraftResponse.json();
-          console.log('Draft sent successfully:', sendResult);
-        }
-      } catch (error) {
-        console.error('Error in newsletter generation/sending process:', {
-          error,
-          message: error instanceof Error ? error.message : 'Unknown error',
-          stack: error instanceof Error ? error.stack : undefined
-        });
-      }
     }
 
-    return NextResponse.json({
-      success: true,
-      message: 'Company onboarded successfully',
-      data: {
-        company_id: company.id,
-        newsletter_id: newsletter.id,
-        total_contacts: createdContacts.length
-      }
-    } as OnboardingResponse);
+    // Generate and send draft newsletter
+    try {
+      // Get the host from the request headers
+      const host = req.headers.get('host') || process.env.VERCEL_URL;
+      const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';
+      const baseUrl = `${protocol}://${host}`;
+
+      console.log('DEBUG - Request headers:', Object.fromEntries(req.headers.entries()));
+      console.log('DEBUG - Environment:', {
+        NODE_ENV: process.env.NODE_ENV,
+        VERCEL_URL: process.env.VERCEL_URL,
+        host,
+        protocol,
+        baseUrl
+      });
+
+      // Start the newsletter generation process asynchronously
+      console.log('Starting async newsletter generation...');
+      const generateUrl = `${baseUrl}/api/newsletter/generate/${newsletter.id}`;
+      fetch(generateUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          newsletterId: newsletter.id
+        })
+      }).catch(error => {
+        console.error('Async newsletter generation error:', error);
+      });
+
+      // Return success immediately
+      return NextResponse.json({
+        success: true,
+        message: 'Newsletter setup started. You will receive an email shortly.',
+        data: {
+          company,
+          newsletter,
+          contacts: createdContacts
+        }
+      });
+
+    } catch (error) {
+      console.error('Error in newsletter generation/sending process:', error);
+      return NextResponse.json(
+        { success: false, message: 'Failed to setup newsletter' },
+        { status: 500 }
+      );
+    }
 
   } catch (error) {
     console.error('Error in onboarding:', error);

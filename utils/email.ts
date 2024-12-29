@@ -1,4 +1,6 @@
 import { Database } from '@/types/database';
+import { getSupabaseAdmin } from '@/utils/supabase-admin';
+import { APIError } from '@/utils/errors';
 
 type Contact = Database['public']['Tables']['contacts']['Row'];
 type Newsletter = Database['public']['Tables']['newsletters']['Row'];
@@ -94,34 +96,46 @@ export async function sendEmail(
         'api-key': BREVO_API_KEY,
         'content-type': 'application/json',
       },
-      body: JSON.stringify(emailData),
+      body: JSON.stringify(emailData)
     });
 
     console.log('Brevo API response status:', response.status);
+    console.log('Brevo API response headers:', Object.fromEntries(response.headers.entries()));
+    const responseText = await response.text();
+    console.log('Brevo API raw response:', responseText);
 
     if (!response.ok) {
-      const error = await response.json() as BrevoError;
-      console.error('Brevo API error response:', error);
-      throw new Error(`Brevo API error: ${error.message} (Code: ${error.code})`);
+      let errorMessage = 'Unknown error';
+      try {
+        const errorData = JSON.parse(responseText) as BrevoError;
+        errorMessage = `Brevo API error: ${errorData.message} (Code: ${errorData.code})`;
+      } catch {
+        errorMessage = `Brevo API error (${response.status}): ${responseText}`;
+      }
+      console.error('Email sending failed:', {
+        status: response.status,
+        statusText: response.statusText,
+        error: errorMessage
+      });
+      throw new Error(errorMessage);
     }
-
-    const responseText = await response.text();
-    console.log('Raw response:', responseText);
 
     let data: BrevoEmailResponse;
     try {
       data = JSON.parse(responseText);
-    } catch (e) {
-      console.error('Failed to parse response JSON:', e);
-      throw new Error('Invalid response from Brevo API');
+      console.log('Email sent successfully:', {
+        messageId: data.messageId,
+        to: to.email,
+        subject
+      });
+      return data.messageId;
+    } catch (error) {
+      console.error('Error parsing Brevo API response:', {
+        error,
+        responseText
+      });
+      throw new Error('Failed to parse Brevo API response');
     }
-
-    console.log('Email sent successfully:', {
-      messageId: data.messageId,
-      to: to.email,
-      subject
-    });
-    return data.messageId;
   } catch (error) {
     console.error('Error sending email:', {
       error,

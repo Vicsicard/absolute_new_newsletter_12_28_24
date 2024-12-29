@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server';
-import { getSupabaseAdmin } from '@/utils/supabase-admin';
 import { sendBulkEmails, validateEmail } from '@/utils/email';
 import { generateEmailHTML } from '@/utils/email-template';
+import { getSupabaseAdmin } from '@/utils/supabase-admin';
 import type { 
-  Newsletter, 
-  NewsletterWithJoins,
+  Newsletter,
+  NewsletterWithAll,
   NewsletterSectionStatus,
   DraftStatus,
   NewsletterStatus 
@@ -16,7 +16,7 @@ if (!process.env.BREVO_API_KEY || !process.env.BREVO_SENDER_EMAIL || !process.en
 }
 
 // Configure API route
-export const runtime = 'edge';
+export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
@@ -76,8 +76,8 @@ export async function POST(request: Request) {
       throw new APIError(`Invalid draft recipient email format: ${newsletter.draft_recipient_email}`, 400);
     }
 
-    // Transform the response to match NewsletterWithJoins type
-    const typedNewsletter: NewsletterWithJoins = {
+    // Transform the response to match NewsletterWithAll type
+    const typedNewsletter: NewsletterWithAll = {
       ...newsletter,
       company: newsletter.company,
       newsletter_sections: newsletter.newsletter_sections.sort((a: { section_number: number }, b: { section_number: number }) => a.section_number - b.section_number)
@@ -95,23 +95,28 @@ export async function POST(request: Request) {
 
     // Send draft to test recipient
     console.log('Sending draft to:', typedNewsletter.draft_recipient_email);
-    const result = await sendBulkEmails(
-      [{
-        email: typedNewsletter.draft_recipient_email!, // We've already checked it's not null above
-        name: null // Match database schema where name is optional
-      }],
-      typedNewsletter.subject,
-      htmlContent
-    );
-
-    console.log('Email sending result:', result);
+    let result;
+    try {
+      result = await sendBulkEmails(
+        [{
+          email: typedNewsletter.draft_recipient_email!, // We've already checked it's not null above
+          name: null // Match database schema where name is optional
+        }],
+        typedNewsletter.subject,
+        htmlContent
+      );
+      console.log('Email sending result:', result);
+    } catch (error) {
+      console.error('Failed to send draft email:', error);
+      throw new APIError('Failed to send draft email', 500);
+    }
 
     // Update newsletter status based on send result
     const hasErrors = result.failed.length > 0;
     const updateData: Pick<Newsletter, 'draft_status' | 'draft_sent_at' | 'last_sent_status' | 'status'> = {
       draft_status: hasErrors ? 'failed' : 'sent' as DraftStatus,
       draft_sent_at: hasErrors ? null : new Date().toISOString(),
-      last_sent_status: hasErrors ? 'error' : 'success',
+      last_sent_status: hasErrors ? `Error: ${result.failed[0]?.error_message || 'Unknown error'}` : 'success',
       status: hasErrors ? 'draft' : 'draft_sent' as NewsletterStatus
     };
 

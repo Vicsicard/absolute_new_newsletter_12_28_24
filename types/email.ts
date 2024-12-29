@@ -111,7 +111,7 @@ export type IndustryInsight = {
 };
 
 // Status types - must match database CHECK constraints exactly
-export type NewsletterStatus = 'draft' | 'draft_sent' | 'pending_contacts' | 'ready_to_send' | 'sending' | 'sent' | 'failed';
+export type NewsletterStatus = 'draft' | 'ready_to_send' | 'sending' | 'sent' | 'failed';
 export type DraftStatus = 'pending' | 'sent' | 'failed';
 export type ContactStatus = 'active' | 'deleted';
 export type NewsletterContactStatus = 'pending' | 'sent' | 'failed';
@@ -122,15 +122,15 @@ export type CompiledNewsletterStatus = 'draft' | 'ready' | 'sent' | 'error';
 
 // Relationship types
 export interface NewsletterWithCompany extends Newsletter {
-  company: Pick<Company, 'company_name' | 'industry' | 'target_audience' | 'audience_description' | 'contact_email'>;
+  company: Company;
 }
 
 export interface NewsletterWithSections extends Newsletter {
   newsletter_sections: NewsletterSection[];
 }
 
-export interface NewsletterWithJoins extends Newsletter {
-  company: Pick<Company, 'company_name' | 'industry' | 'target_audience' | 'audience_description' | 'contact_email'>;
+export interface NewsletterWithAll extends Newsletter {
+  company: Company;
   newsletter_sections: NewsletterSection[];
 }
 

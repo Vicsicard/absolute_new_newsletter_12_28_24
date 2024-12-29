@@ -9,7 +9,7 @@ import type {
   NewsletterSection,
   NewsletterContact,
   Contact,
-  NewsletterWithRelations
+  NewsletterWithAll
 } from '@/types/email';
 import { APIError } from '@/utils/errors';
 
@@ -37,32 +37,9 @@ export async function POST(req: Request) {
     const { data: newsletter, error: newsletterError } = await supabaseAdmin
       .from('newsletters')
       .select(`
-        id,
-        company_id,
-        subject,
-        draft_status,
-        draft_recipient_email,
-        draft_sent_at,
-        status,
-        sent_at,
-        sent_count,
-        failed_count,
-        last_sent_status,
-        created_at,
-        updated_at,
+        *,
         company:companies!inner (*),
-        newsletter_sections (
-          id,
-          newsletter_id,
-          section_number,
-          title,
-          content,
-          image_prompt,
-          image_url,
-          status,
-          created_at,
-          updated_at
-        )
+        newsletter_sections (*)
       `)
       .eq('id', newsletterId)
       .eq('status', 'ready_to_send')
@@ -73,18 +50,7 @@ export async function POST(req: Request) {
       throw new APIError('Failed to fetch newsletter or newsletter not ready to send', 500);
     }
 
-    // Transform the response to match NewsletterWithRelations type
-    const typedNewsletter: NewsletterWithRelations = {
-      ...newsletter,
-      company: {
-        company_name: newsletter.company[0].company_name,
-        industry: newsletter.company[0].industry,
-        target_audience: newsletter.company[0].target_audience,
-        audience_description: newsletter.company[0].audience_description,
-        contact_email: newsletter.company[0].contact_email
-      },
-      newsletter_sections: newsletter.newsletter_sections || []
-    };
+    const typedNewsletter: NewsletterWithAll = newsletter;
 
     // Update to sending status
     const { error: sendingError } = await supabaseAdmin
@@ -100,23 +66,8 @@ export async function POST(req: Request) {
     const { data: contacts, error: contactsError } = await supabaseAdmin
       .from('newsletter_contacts')
       .select(`
-        id,
-        newsletter_id,
-        contact_id,
-        status,
-        sent_at,
-        error_message,
-        created_at,
-        updated_at,
-        contact:contacts!inner (
-          id,
-          company_id,
-          email,
-          name,
-          status,
-          created_at,
-          updated_at
-        )
+        *,
+        contact:contacts!inner (*)
       `)
       .eq('newsletter_id', newsletterId)
       .eq('status', 'pending')
@@ -199,31 +150,38 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json({
+      success: true,
       message: 'Newsletter sent successfully',
-      result: {
-        successful: result.successful.length,
+      data: {
+        sent: result.successful.length,
         failed: result.failed.length
       }
     });
+
   } catch (error) {
-    // If there's an error and we have a newsletter ID, update its status to failed
+    console.error('Error sending newsletter:', error);
+
+    // If we have a newsletter ID, update its status to failed
     if (newsletterId) {
       await supabaseAdmin
         .from('newsletters')
         .update({
           status: 'failed' as NewsletterStatus,
-          last_sent_status: error instanceof APIError ? error.message : 'Failed to send newsletter'
+          last_sent_status: error instanceof APIError ? error.message : 'Unknown error occurred'
         })
         .eq('id', newsletterId);
     }
 
-    console.error('Error sending newsletter:', error);
-    return NextResponse.json(
-      { 
-        success: false, 
-        message: error instanceof APIError ? error.message : 'Failed to send newsletter'
-      }, 
-      { status: error instanceof APIError ? error.statusCode : 500 }
-    );
+    if (error instanceof APIError) {
+      return NextResponse.json({
+        success: false,
+        message: error.message
+      }, { status: error.statusCode });
+    }
+
+    return NextResponse.json({
+      success: false,
+      message: 'An unexpected error occurred'
+    }, { status: 500 });
   }
 }
