@@ -7,9 +7,14 @@ import type {
   NewsletterContactStatus,
   Newsletter,
   NewsletterSection,
-  NewsletterContact
+  NewsletterContact,
+  Contact
 } from '@/types/email';
 import { APIError } from '@/utils/errors';
+
+interface NewsletterContactWithRelations extends NewsletterContact {
+  contacts: Contact;
+}
 
 // Configure API route
 export const runtime = 'edge';
@@ -77,6 +82,8 @@ export async function POST(req: Request) {
         status,
         sent_at,
         error_message,
+        created_at,
+        updated_at,
         contacts (
           id,
           email,
@@ -92,34 +99,36 @@ export async function POST(req: Request) {
     }
 
     // Filter out inactive contacts and format for sending
-    const emailContacts: EmailContact[] = contacts
-      ?.filter(c => c.contacts?.status === 'active')
+    const emailContacts: EmailContact[] = (contacts as NewsletterContactWithRelations[] || [])
+      .filter(c => c.contacts?.status === 'active')
       .map(c => ({
         email: c.contacts.email,
         name: c.contacts.name || undefined
-      })) || [];
+      }));
 
     if (emailContacts.length === 0) {
       throw new APIError('No active contacts found for this newsletter', 400);
     }
 
-    // Send the newsletter
-    const results = await sendBulkEmails(
-      emailContacts,
-      newsletter.subject,
-      newsletter.content
-    );
+    // Send emails
+    const result = await sendBulkEmails({
+      subject: newsletter.subject,
+      sections: newsletter.newsletter_sections,
+      contacts: emailContacts
+    });
 
-    // Update newsletter status
+    // Update newsletter status based on results
+    const updates: Partial<Newsletter> = {
+      status: result.success ? 'sent' : 'failed',
+      sent_count: result.data?.results?.successful.length || 0,
+      failed_count: result.data?.results?.failed.length || 0,
+      last_sent_status: result.message,
+      sent_at: new Date().toISOString()
+    };
+
     const { error: updateError } = await supabaseAdmin
       .from('newsletters')
-      .update({
-        status: results.failed.length === 0 ? 'sent' : 'failed' as NewsletterStatus,
-        sent_at: new Date().toISOString(),
-        sent_count: results.successful.length,
-        failed_count: results.failed.length,
-        last_sent_status: results.failed.length === 0 ? 'success' : 'partial_failure'
-      })
+      .update(updates)
       .eq('id', newsletterId);
 
     if (updateError) {
@@ -127,31 +136,29 @@ export async function POST(req: Request) {
     }
 
     // Update newsletter_contacts status
-    for (const success of results.successful) {
-      const contact = contacts?.find(c => c.contacts?.email === success.email);
-      if (contact) {
-        await supabaseAdmin
-          .from('newsletter_contacts')
-          .update({
-            status: 'sent' as NewsletterContactStatus,
-            sent_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', contact.id);
-      }
-    }
+    if (result.data?.results) {
+      const successfulEmails = new Set(result.data.results.successful.map(s => s.email));
+      const failedEmails = new Set(result.data.results.failed.map(f => f.email));
 
-    for (const failure of results.failed) {
-      const contact = contacts?.find(c => c.contacts?.email === failure.email);
-      if (contact) {
-        await supabaseAdmin
-          .from('newsletter_contacts')
-          .update({
-            status: 'failed' as NewsletterContactStatus,
-            error_message: failure.error,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', contact.id);
+      // Prepare contact status updates
+      const contactUpdates = (contacts as NewsletterContactWithRelations[]).map(contact => ({
+        id: contact.id,
+        status: successfulEmails.has(contact.contacts.email) ? 'sent' as const
+          : failedEmails.has(contact.contacts.email) ? 'failed' as const
+          : 'pending' as const,
+        sent_at: successfulEmails.has(contact.contacts.email) ? new Date().toISOString() : null,
+        error_message: failedEmails.has(contact.contacts.email)
+          ? result.data.results.failed.find(f => f.email === contact.contacts.email)?.error
+          : null
+      }));
+
+      // Update contact statuses
+      const { error: contactUpdateError } = await supabaseAdmin
+        .from('newsletter_contacts')
+        .upsert(contactUpdates);
+
+      if (contactUpdateError) {
+        throw new APIError('Failed to update contact statuses', 500);
       }
     }
 
@@ -159,18 +166,17 @@ export async function POST(req: Request) {
       success: true,
       message: 'Newsletter sent successfully',
       data: {
-        newsletter_id: newsletterId,
-        total_sent: results.successful.length,
-        total_failed: results.failed.length,
-        sent_at: new Date().toISOString()
+        sent: result.data?.results?.successful.length || 0,
+        failed: result.data?.results?.failed.length || 0
       }
     });
+
   } catch (error) {
     console.error('Error sending newsletter:', error);
     return NextResponse.json(
-      { 
-        success: false, 
-        message: error instanceof Error ? error.message : 'Failed to send newsletter'
+      {
+        success: false,
+        message: error instanceof Error ? error.message : 'Internal server error'
       },
       { status: error instanceof APIError ? error.status : 500 }
     );
