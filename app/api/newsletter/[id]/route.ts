@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/utils/supabase-admin';
 import { APIError } from '@/utils/errors';
+import type { NewsletterContact } from '@/types/email';
 
 // Configure API route
 export const runtime = 'edge';
@@ -70,7 +71,7 @@ export async function GET(
     const formattedNewsletter = {
       ...newsletter,
       newsletter_contacts: newsletter.newsletter_contacts?.filter(
-        contact => contact.contacts?.status === 'active'
+        (contact: NewsletterContact) => contact.contacts?.status === 'active'
       )
     };
 
