@@ -9,14 +9,6 @@ if (!process.env.BREVO_API_KEY) {
   throw new Error('Missing BREVO_API_KEY environment variable')
 }
 
-if (!process.env.OPENAI_API_KEY) {
-  throw new Error('Missing OPENAI_API_KEY environment variable')
-}
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-})
-
 type DbNewsletterSection = Database['public']['Tables']['newsletter_sections']['Row']
 
 export interface NewsletterSection {
@@ -31,7 +23,18 @@ export interface NewsletterSection {
   updated_at?: string
 }
 
+// Add delay utility function
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 export async function generateNewsletter(newsletterId: string): Promise<NewsletterSection[]> {
+  if (!process.env.OPENAI_API_KEY) {
+    throw new Error('Missing OPENAI_API_KEY environment variable')
+  }
+
+  const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+  })
+
   const { data: newsletter, error: newsletterError } = await supabaseAdmin
     .from('newsletters')
     .select('*, company:companies(*)')
@@ -45,6 +48,9 @@ export async function generateNewsletter(newsletterId: string): Promise<Newslett
   if (!newsletter) {
     throw new Error('Newsletter not found')
   }
+
+  // Add 15 second delay before content generation
+  await delay(15000);
 
   const completion = await openai.chat.completions.create({
     model: "gpt-4",
@@ -94,10 +100,13 @@ Audience Description: ${newsletter.company.audience_description || 'Businesses i
 
   const sections = parseNewsletterContent(generatedContent)
 
-  // Generate images for each section
+  // Generate images for each section with delays between requests
   for (const section of sections) {
     if (section.image_prompt) {
       try {
+        // Add 30 second delay before each image generation
+        await delay(30000);
+        
         const imageResponse = await openai.images.generate({
           model: "dall-e-3",
           prompt: section.image_prompt,
@@ -112,7 +121,8 @@ Audience Description: ${newsletter.company.audience_description || 'Businesses i
         }
       } catch (error) {
         console.error('Error generating image:', error);
-        // Continue with other sections even if image generation fails
+        // Add extra delay if there was an error before continuing
+        await delay(45000);
       }
     }
   }
