@@ -1,5 +1,9 @@
 export type NewsletterStatus = 'draft' | 'pending' | 'sending' | 'sent' | 'failed';
 export type DraftStatus = 'pending' | 'sent' | 'failed';
+export type ContactStatus = 'active' | 'inactive' | 'deleted';
+export type NewsletterContactStatus = 'pending' | 'sent' | 'failed';
+export type NewsletterSectionStatus = 'active' | 'deleted';
+export type ImageGenerationStatus = 'pending' | 'processing' | 'completed' | 'failed';
 
 export interface Database {
   public: {
@@ -44,7 +48,7 @@ export interface Database {
           content: string;
           image_prompt: string | null;
           image_url: string | null;
-          status: string;
+          status: NewsletterSectionStatus;
           created_at: string;
           updated_at: string;
         };
@@ -55,7 +59,7 @@ export interface Database {
           company_id: string;
           email: string;
           name: string | null;
-          status: string;
+          status: ContactStatus;
           created_at: string;
           updated_at: string;
         };
@@ -65,7 +69,7 @@ export interface Database {
           id: string;
           newsletter_id: string;
           contact_id: string;
-          status: string;
+          status: NewsletterContactStatus;
           sent_at: string | null;
           error_message: string | null;
           created_at: string;
@@ -80,7 +84,7 @@ export interface Database {
           model: string;
           image_url: string | null;
           error_message: string | null;
-          status: string;
+          status: ImageGenerationStatus;
           created_at: string;
           updated_at: string;
         };

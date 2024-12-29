@@ -1,7 +1,9 @@
 import { createClient } from '@supabase/supabase-js'
 import { Database } from '@/types/supabase'
 
-function getSupabaseAdmin() {
+let _supabaseAdmin: ReturnType<typeof createClient<Database>> | null = null;
+
+export function getSupabaseAdmin() {
   if (typeof window !== 'undefined') {
     throw new Error('getSupabaseAdmin should only be called on the server')
   }
@@ -13,33 +15,37 @@ function getSupabaseAdmin() {
     throw new Error('Missing SUPABASE_SERVICE_ROLE_KEY environment variable')
   }
 
-  return createClient<Database>(
-    process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_ROLE_KEY,
-    {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false,
-      },
-    }
-  )
+  if (!_supabaseAdmin) {
+    _supabaseAdmin = createClient<Database>(
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY,
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false,
+        },
+      }
+    )
+  }
+
+  return _supabaseAdmin
 }
 
-// Export a getter function instead of the client directly
-export const supabaseAdmin = getSupabaseAdmin()
+let _supabaseClient: ReturnType<typeof createClient<Database>> | null = null;
 
-// Client-side Supabase client
-function getSupabaseClient() {
-  return createClient<Database>(
-    process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '',
-    {
-      auth: {
-        autoRefreshToken: true,
-        persistSession: true,
-      },
-    }
-  )
+export function getSupabaseClient() {
+  if (!_supabaseClient) {
+    _supabaseClient = createClient<Database>(
+      process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '',
+      {
+        auth: {
+          autoRefreshToken: true,
+          persistSession: true,
+        },
+      }
+    )
+  }
+
+  return _supabaseClient
 }
-
-export const supabaseClient = getSupabaseClient()

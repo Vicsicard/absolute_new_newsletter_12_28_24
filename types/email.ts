@@ -6,9 +6,15 @@ type NewsletterContact = Database['public']['Tables']['newsletter_contacts']['Ro
 type Newsletter = Database['public']['Tables']['newsletters']['Row'];
 type NewsletterSection = Database['public']['Tables']['newsletter_sections']['Row'];
 
-export type NewsletterStatus = 'draft' | 'pending' | 'sending' | 'sent' | 'failed';
-export type DraftStatus = 'pending' | 'sent' | 'failed';
-export type NewsletterContactStatus = 'pending' | 'sent' | 'failed';
+// Re-export types from database for convenience
+export type { 
+  NewsletterStatus,
+  DraftStatus,
+  NewsletterContactStatus,
+  ContactStatus,
+  NewsletterSectionStatus,
+  ImageGenerationStatus 
+} from './database';
 
 export interface EmailContact {
   email: string;

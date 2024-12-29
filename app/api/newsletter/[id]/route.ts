@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/utils/supabase-admin';
+import { getSupabaseAdmin } from '@/utils/supabase-admin';
 
-export const runtime = 'nodejs';
+// Configure API route
+export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
 
 export async function GET(
@@ -9,6 +10,7 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
+    const supabaseAdmin = getSupabaseAdmin();
     const { data: newsletter, error } = await supabaseAdmin
       .from('newsletters')
       .select(`

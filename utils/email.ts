@@ -1,5 +1,5 @@
 import { EmailContact, BulkEmailResult, NewsletterStatus } from '@/types/email';
-import { supabaseAdmin } from './supabase-admin';
+import { getSupabaseAdmin } from './supabase-admin';
 
 if (!process.env.BREVO_API_KEY) {
   throw new Error('Missing BREVO_API_KEY environment variable');
@@ -167,6 +167,8 @@ export async function sendNewsletter(
   subject: string,
   htmlContent: string
 ): Promise<BulkEmailResult> {
+  const supabaseAdmin = getSupabaseAdmin();
+  
   try {
     // Update newsletter status to sending
     await supabaseAdmin

@@ -1,16 +1,19 @@
 import { NextResponse } from 'next/server';
 import { sendBulkEmails } from '@/utils/email';
-import { supabaseAdmin } from '@/utils/supabase-admin';
-import type { EmailContact, NewsletterStatus } from '@/types/email';
+import { getSupabaseAdmin } from '@/utils/supabase-admin';
+import type { EmailContact, NewsletterStatus, NewsletterContactStatus } from '@/types/email';
 import type { Database } from '@/types/database';
 import { APIError } from '@/utils/errors';
 
-export const runtime = 'nodejs';
+// Configure API route
+export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
 
 type NewsletterSection = Database['public']['Tables']['newsletter_sections']['Row'];
 
 export async function POST(req: Request) {
+  const supabaseAdmin = getSupabaseAdmin();
+
   try {
     const { newsletterId } = await req.json();
 
@@ -40,7 +43,7 @@ export async function POST(req: Request) {
         contact:contacts (*)
       `)
       .eq('newsletter_id', newsletterId)
-      .eq('status', 'pending');
+      .eq('status', 'pending' as NewsletterContactStatus);
 
     if (contactsError) {
       throw new APIError('Failed to fetch contacts', 500);
@@ -51,13 +54,17 @@ export async function POST(req: Request) {
     }
 
     // Update newsletter status to sending
-    await supabaseAdmin
+    const { error: updateError } = await supabaseAdmin
       .from('newsletters')
       .update({ 
-        status: 'sending',
+        status: 'sending' as NewsletterStatus,
         sent_at: new Date().toISOString()
       })
       .eq('id', newsletterId);
+
+    if (updateError) {
+      throw new APIError('Failed to update newsletter status', 500);
+    }
 
     // Format sections into HTML
     const formattedContent = newsletter.sections
@@ -90,7 +97,7 @@ export async function POST(req: Request) {
       return supabaseAdmin
         .from('newsletter_contacts')
         .update({
-          status: wasSuccessful ? 'sent' : 'failed',
+          status: wasSuccessful ? ('sent' as NewsletterContactStatus) : ('failed' as NewsletterContactStatus),
           sent_at: wasSuccessful ? new Date().toISOString() : null,
           error_message: failedResult?.error || null
         })
@@ -99,30 +106,52 @@ export async function POST(req: Request) {
 
     await Promise.all(updates);
 
-    // Update newsletter status and counts
-    await supabaseAdmin
+    // Update newsletter final status
+    const { error: finalUpdateError } = await supabaseAdmin
       .from('newsletters')
       .update({
-        status: results.failed.length === 0 ? 'sent' : 'failed',
+        status: results.failed.length === 0 ? ('sent' as NewsletterStatus) : ('failed' as NewsletterStatus),
         sent_count: results.successful.length,
         failed_count: results.failed.length,
         last_sent_status: results.failed.length === 0 ? 'success' : 'partial_failure'
       })
       .eq('id', newsletterId);
 
+    if (finalUpdateError) {
+      throw new APIError('Failed to update newsletter final status', 500);
+    }
+
     return NextResponse.json({
       success: true,
       data: {
         successful: results.successful.length,
-        failed: results.failed.length
+        failed: results.failed.length,
+        status: results.failed.length === 0 ? 'sent' : 'failed'
       }
     });
   } catch (error) {
-    console.error('Error sending newsletter:', error);
+    console.error('Error in newsletter send route:', error);
+
+    // If we have a newsletter ID, try to update its status to failed
+    try {
+      const { newsletterId } = await req.json();
+      if (newsletterId) {
+        await supabaseAdmin
+          .from('newsletters')
+          .update({
+            status: 'failed' as NewsletterStatus,
+            last_sent_status: 'error'
+          })
+          .eq('id', newsletterId);
+      }
+    } catch (e) {
+      console.error('Failed to update newsletter status to failed:', e);
+    }
+
     return NextResponse.json(
       {
         success: false,
-        message: error instanceof APIError ? error.message : 'Failed to send newsletter'
+        message: error instanceof Error ? error.message : 'Internal server error'
       },
       { status: error instanceof APIError ? error.statusCode : 500 }
     );

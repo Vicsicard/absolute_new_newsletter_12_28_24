@@ -1,17 +1,19 @@
 import { NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/utils/supabase-admin';
+import { getSupabaseAdmin } from '@/utils/supabase-admin';
 import { generateNewsletter, sendNewsletter } from '@/utils/newsletter';
 import type { OnboardingResponse } from '@/types/api';
 import { APIError as ApiError, DatabaseError } from '@/utils/errors';
 import { NextRequest } from 'next/server';
 import { Database } from '@/types/supabase';
 
-// New way to configure API routes in App Router
-export const runtime = 'nodejs';
+// Configure API route
+export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300; // Set max duration to 5 minutes
 
 export async function POST(req: NextRequest) {
+  const supabaseAdmin = getSupabaseAdmin();
+  
   try {
     console.log('API: Received onboarding request');
     
@@ -100,106 +102,56 @@ export async function POST(req: NextRequest) {
         .single();
 
       if (sectionError) {
-        console.error(`API: Failed to insert section ${i + 1}:`, sectionError);
-        continue;
-      }
-
-      // Record image generation if it exists
-      if (section.image_prompt) {
-        const { error: imageHistoryError } = await supabaseAdmin
-          .from('image_generation_history')
-          .insert({
-            newsletter_section_id: insertedSection.id,
-            prompt: section.image_prompt,
-            status: section.image_url ? 'completed' : 'failed',
-            image_url: section.image_url || null
-          });
-
-        if (imageHistoryError) {
-          console.error('API: Failed to record image generation:', imageHistoryError);
-        }
+        console.error('API: Failed to insert section:', sectionError);
+        throw new DatabaseError('Failed to create newsletter section');
       }
     }
 
-    // Wait a bit to ensure all database operations are complete
-    console.log('API: Waiting for all processes to complete...');
-    await new Promise(resolve => setTimeout(resolve, 5000)); // 5 second delay
+    // Send the welcome email
+    try {
+      const welcomeEmail = {
+        email: companyData.contact_email,
+        name: companyData.company_name
+      };
 
-    // Double check that all sections and images are properly saved
-    const { data: savedSections, error: fetchError } = await supabaseAdmin
-      .from('newsletter_sections')
-      .select('*, image_generation_history(*)')
-      .eq('newsletter_id', newsletter.id)
-      .order('section_number');
+      const welcomeSubject = `Welcome to Our Newsletter Service - ${companyData.company_name}`;
+      const welcomeContent = `
+        <h1>Welcome to Our Newsletter Service!</h1>
+        <p>Dear ${companyData.company_name},</p>
+        <p>Thank you for signing up for our newsletter service. We're excited to help you create engaging newsletters for your audience.</p>
+        <p>We've generated your first draft newsletter and will send it to you shortly for review.</p>
+        <p>Best regards,<br>Your Newsletter Team</p>
+      `;
 
-    if (fetchError) {
-      console.error('API: Failed to fetch saved sections:', fetchError);
-      throw new DatabaseError('Failed to verify newsletter sections');
+      await sendNewsletter(
+        newsletter.id,
+        [welcomeEmail],
+        welcomeSubject,
+        welcomeContent
+      );
+
+      console.log('API: Welcome email sent successfully');
+    } catch (emailError) {
+      console.error('API: Failed to send welcome email:', emailError);
+      // Don't throw error here, as we still want to return success response
     }
-
-    // Verify all sections are present and images are generated
-    if (!savedSections || savedSections.length !== sections.length) {
-      console.error('API: Missing sections:', { expected: sections.length, found: savedSections?.length });
-      throw new Error('Newsletter sections are incomplete');
-    }
-
-    // Format the newsletter content with verified saved sections
-    const formattedContent = savedSections.map((section) => `
-      <div class="newsletter-section">
-        <h2>${section.title}</h2>
-        ${section.image_url ? `<img src="${section.image_url}" alt="${section.title}" style="max-width: 100%; height: auto; margin: 20px 0;">` : ''}
-        <div class="content">
-          ${section.content.split('\n').map((line: string) => `<p>${line}</p>`).join('\n')}
-        </div>
-      </div>
-    `).join('\n\n');
-
-    // Send draft email with the verified content
-    const emailContact = {
-      email: companyData.contact_email,
-      name: companyData.company_name
-    };
-
-    console.log('API: Sending draft email to:', emailContact);
-    
-    await sendNewsletter(
-      [emailContact],
-      `${companyData.company_name} - Welcome Newsletter Draft`,
-      formattedContent
-    );
-    
-    console.log('API: Newsletter draft sent successfully');
-
-    // Update newsletter status to draft_sent
-    const { error: updateError } = await supabaseAdmin
-      .from('newsletters')
-      .update({ 
-        draft_status: 'draft_sent',
-        draft_sent_at: new Date().toISOString()
-      })
-      .eq('id', newsletter.id);
-
-    if (updateError) {
-      console.error('API: Failed to update newsletter status:', updateError);
-      throw new DatabaseError('Failed to update newsletter status');
-    }
-
-    console.log('API: Newsletter status updated successfully');
 
     return NextResponse.json({
       success: true,
-      message: 'Newsletter draft created and sent successfully',
-      data: { newsletter_id: newsletter.id }
+      data: {
+        company,
+        newsletter
+      }
     });
-
   } catch (error) {
-    console.error('API: Onboarding error:', error);
+    console.error('API: Error in onboarding route:', error);
+    const statusCode = error instanceof ApiError ? error.statusCode : 500;
     return NextResponse.json(
-      { 
-        success: false, 
-        message: error instanceof Error ? error.message : 'Failed to process onboarding' 
+      {
+        success: false,
+        message: error instanceof Error ? error.message : 'Internal server error'
       },
-      { status: 500 }
+      { status: statusCode }
     );
   }
 }
