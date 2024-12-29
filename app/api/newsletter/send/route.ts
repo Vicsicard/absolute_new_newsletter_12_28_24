@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { sendBulkEmails } from '@/utils/email';
 import { supabaseAdmin } from '@/utils/supabase-admin';
 import type { EmailContact, NewsletterStatus } from '@/types/email';
+import type { Database } from '@/types/database';
 import { APIError } from '@/utils/errors';
 
 export const runtime = 'nodejs';
@@ -58,7 +59,9 @@ export async function POST(req: Request) {
 
     // Format sections into HTML
     const formattedContent = newsletter.sections
-      .sort((a, b) => a.section_number - b.section_number)
+      .sort((a: Database['public']['Tables']['newsletter_sections']['Row'], 
+             b: Database['public']['Tables']['newsletter_sections']['Row']) => 
+        a.section_number - b.section_number)
       .map(section => `
         <div class="newsletter-section">
           <h2>${section.title}</h2>
