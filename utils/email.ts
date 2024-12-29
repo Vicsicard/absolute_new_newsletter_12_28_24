@@ -1,4 +1,4 @@
-import { EmailContact, BulkEmailResult } from '@/types/email';
+import { EmailContact, BulkEmailResult, NewsletterStatus } from '@/types/email';
 import { supabaseAdmin } from './supabase-admin';
 
 if (!process.env.BREVO_API_KEY) {
@@ -95,6 +95,15 @@ export async function sendBulkEmails(
 
   for (const batch of batches) {
     try {
+      const sender = {
+        email: process.env.BREVO_SENDER_EMAIL,
+        name: process.env.BREVO_SENDER_NAME
+      };
+
+      if (!sender.email || !sender.name) {
+        throw new Error('Missing BREVO_SENDER_EMAIL or BREVO_SENDER_NAME environment variables');
+      }
+
       const response = await fetch(BREVO_API_URL, {
         method: 'POST',
         headers: {
@@ -103,9 +112,10 @@ export async function sendBulkEmails(
           'content-type': 'application/json',
         },
         body: JSON.stringify({
+          sender,
           to: batch.map(contact => ({
             email: contact.email,
-            name: contact.name,
+            name: contact.name || contact.email,
           })),
           subject,
           htmlContent,
@@ -114,36 +124,33 @@ export async function sendBulkEmails(
 
       if (!response.ok) {
         const error = await response.json() as BrevoError;
-        // If batch fails, mark all contacts in batch as failed
         batch.forEach(contact => {
           results.failed.push({
             email: contact.email,
-            error: error.message,
+            error: `Brevo API error: ${error.message}`
           });
         });
         continue;
       }
 
       const data = await response.json() as BrevoEmailResponse;
-      // Mark all contacts in successful batch as successful
       batch.forEach(contact => {
         results.successful.push({
           email: contact.email,
-          messageId: data.messageId,
+          messageId: data.messageId
         });
       });
+
+      // Add delay between batches to avoid rate limits
+      await new Promise(resolve => setTimeout(resolve, 1000));
     } catch (error) {
-      // If batch fails due to network error, mark all contacts as failed
       batch.forEach(contact => {
         results.failed.push({
           email: contact.email,
-          error: error instanceof Error ? error.message : 'Unknown error',
+          error: error instanceof Error ? error.message : 'Unknown error occurred'
         });
       });
     }
-
-    // Add a small delay between batches to avoid rate limits
-    await new Promise(resolve => setTimeout(resolve, 100));
   }
 
   return results;
@@ -152,28 +159,52 @@ export async function sendBulkEmails(
 /**
  * Send a newsletter to a list of contacts
  * Returns results for both successful and failed sends
- * Updates newsletter status if newsletterId is provided
+ * Updates newsletter status and contact statuses in the database
  */
 export async function sendNewsletter(
-  to: EmailContact[],
+  newsletterId: string,
+  contacts: EmailContact[],
   subject: string,
-  htmlContent: string,
-  newsletterId?: string
+  htmlContent: string
 ): Promise<BulkEmailResult> {
-  const result = await sendBulkEmails(to, subject, htmlContent);
-
-  // Update newsletter status if newsletterId is provided
-  if (newsletterId) {
+  try {
+    // Update newsletter status to sending
     await supabaseAdmin
       .from('newsletters')
       .update({
-        status: result.failed.length === 0 ? 'sent' : 'failed',
+        status: 'sending' as NewsletterStatus,
         sent_at: new Date().toISOString()
       })
       .eq('id', newsletterId);
-  }
 
-  return result;
+    // Send the emails
+    const results = await sendBulkEmails(contacts, subject, htmlContent);
+
+    // Update newsletter status based on results
+    await supabaseAdmin
+      .from('newsletters')
+      .update({
+        status: results.failed.length === 0 ? 'sent' : 'failed' as NewsletterStatus,
+        sent_count: results.successful.length,
+        failed_count: results.failed.length,
+        last_sent_status: results.failed.length === 0 ? 'success' : 'partial_failure'
+      })
+      .eq('id', newsletterId);
+
+    return results;
+  } catch (error) {
+    // Update newsletter status to failed
+    await supabaseAdmin
+      .from('newsletters')
+      .update({
+        status: 'failed' as NewsletterStatus,
+        last_sent_status: 'error',
+        failed_count: contacts.length
+      })
+      .eq('id', newsletterId);
+
+    throw error;
+  }
 }
 
 export function validateEmail(email: string): boolean {

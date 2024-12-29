@@ -1,13 +1,18 @@
 // Email Types
-import { Database } from './supabase';
+import { Database } from './database';
 
 type Contact = Database['public']['Tables']['contacts']['Row'];
 type NewsletterContact = Database['public']['Tables']['newsletter_contacts']['Row'];
 type Newsletter = Database['public']['Tables']['newsletters']['Row'];
+type NewsletterSection = Database['public']['Tables']['newsletter_sections']['Row'];
+
+export type NewsletterStatus = 'draft' | 'pending' | 'sending' | 'sent' | 'failed';
+export type DraftStatus = 'pending' | 'sent' | 'failed';
+export type NewsletterContactStatus = 'pending' | 'sent' | 'failed';
 
 export interface EmailContact {
   email: string;
-  name?: string;
+  name?: string | null;
 }
 
 export interface BulkEmailResult {
@@ -36,11 +41,7 @@ export interface EmailApiResponse {
 
 export interface NewsletterEmailData {
   subject: string;
-  sections: Array<{
-    title: string;
-    content: string;
-    image_url?: string;
-  }>;
+  sections: Array<NewsletterSection>;
   contacts: Array<{
     newsletterContactId: string;
     contact: Contact;
@@ -53,6 +54,3 @@ export interface NewsletterSendResult extends BulkEmailResult {
   totalFailed: number;
   updatedContacts: NewsletterContact[];
 }
-
-export type NewsletterContactStatus = 'pending' | 'sent' | 'failed';
-export type NewsletterStatus = Database['public']['Tables']['newsletters']['Row']['status'];
