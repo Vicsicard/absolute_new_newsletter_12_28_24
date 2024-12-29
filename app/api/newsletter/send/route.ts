@@ -117,11 +117,15 @@ export async function POST(req: Request) {
     }
 
     // Send emails
-    const result = await sendBulkEmails({
-      subject: newsletter.subject,
-      sections: newsletter.newsletter_sections,
-      contacts: emailContacts
-    });
+    const result = await sendBulkEmails(
+      emailContacts,
+      newsletter.subject,
+      newsletter.newsletter_sections.map(section => `
+        <h2>${section.title}</h2>
+        ${section.content}
+        ${section.image_url ? `<img src="${section.image_url}" alt="${section.title}">` : ''}
+      `).join('\n')
+    );
 
     // Update newsletter status based on results
     const updates: Partial<Newsletter> = {
