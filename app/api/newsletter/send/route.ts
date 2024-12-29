@@ -24,9 +24,11 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(req: Request) {
   const supabaseAdmin = getSupabaseAdmin();
+  let newsletterId: string | undefined;
 
   try {
-    const { newsletterId } = await req.json();
+    const body = await req.json();
+    newsletterId = body.newsletterId;
 
     if (!newsletterId) {
       throw new APIError('Missing newsletter ID', 400);
@@ -190,14 +192,16 @@ export async function POST(req: Request) {
       }
     });
   } catch (error) {
-    // If there's an error, update newsletter status to failed
-    await supabaseAdmin
-      .from('newsletters')
-      .update({
-        status: 'failed' as NewsletterStatus,
-        last_sent_status: error instanceof APIError ? error.message : 'Failed to send newsletter'
-      })
-      .eq('id', newsletterId);
+    // If there's an error and we have a newsletter ID, update its status to failed
+    if (newsletterId) {
+      await supabaseAdmin
+        .from('newsletters')
+        .update({
+          status: 'failed' as NewsletterStatus,
+          last_sent_status: error instanceof APIError ? error.message : 'Failed to send newsletter'
+        })
+        .eq('id', newsletterId);
+    }
 
     console.error('Error sending newsletter:', error);
     return NextResponse.json(

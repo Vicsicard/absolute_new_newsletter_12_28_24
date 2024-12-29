@@ -1,0 +1,17 @@
+{
+  "version": 2,
+  "buildCommand": "npm run build",
+  "devCommand": "npm run dev",
+  "installCommand": "npm install",
+  "framework": "nextjs",
+  "functions": {
+    "app/api/newsletter/send/route.ts": {
+      "memory": 1024,
+      "maxDuration": 60
+    },
+    "app/api/onboarding/route.ts": {
+      "memory": 1024,
+      "maxDuration": 60
+    }
+  }
+}
