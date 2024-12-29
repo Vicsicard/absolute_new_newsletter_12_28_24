@@ -148,30 +148,27 @@ export async function POST(req: Request) {
     }
 
     // Update newsletter_contacts status
-    if (result.data?.results) {
-      const successfulEmails = new Set(result.data.results.successful.map(s => s.email));
-      const failedEmails = new Set(result.data.results.failed.map(f => f.email));
+    const contactUpdates = contacts.map(contact => {
+      const successfulIndex = result.successful.findIndex(s => s.email === contact.contacts.email);
+      const failedIndex = result.failed.findIndex(f => f.email === contact.contacts.email);
 
-      // Prepare contact status updates
-      const contactUpdates = contacts.map(contact => ({
+      return {
         id: contact.id,
-        status: successfulEmails.has(contact.contacts.email) ? 'sent' as const
-          : failedEmails.has(contact.contacts.email) ? 'failed' as const
+        status: successfulIndex !== -1 ? 'sent' as const
+          : failedIndex !== -1 ? 'failed' as const
           : 'pending' as const,
-        sent_at: successfulEmails.has(contact.contacts.email) ? new Date().toISOString() : null,
-        error_message: failedEmails.has(contact.contacts.email)
-          ? result.data.results.failed.find(f => f.email === contact.contacts.email)?.error
-          : null
-      }));
+        sent_at: successfulIndex !== -1 ? new Date().toISOString() : null,
+        error_message: failedIndex !== -1 ? result.failed[failedIndex].error : null
+      };
+    });
 
-      // Update contact statuses
-      const { error: contactUpdateError } = await supabaseAdmin
-        .from('newsletter_contacts')
-        .upsert(contactUpdates);
+    // Update contact statuses
+    const { error: contactUpdateError } = await supabaseAdmin
+      .from('newsletter_contacts')
+      .upsert(contactUpdates);
 
-      if (contactUpdateError) {
-        throw new APIError('Failed to update contact statuses', 500);
-      }
+    if (contactUpdateError) {
+      throw new APIError('Failed to update contact statuses', 500);
     }
 
     return NextResponse.json({
