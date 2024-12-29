@@ -36,7 +36,11 @@ export interface EmailApiResponse {
 
 export interface NewsletterEmailData {
   subject: string;
-  content: string;
+  sections: Array<{
+    title: string;
+    content: string;
+    image_url?: string;
+  }>;
   contacts: Array<{
     newsletterContactId: string;
     contact: Contact;
@@ -50,11 +54,5 @@ export interface NewsletterSendResult extends BulkEmailResult {
   updatedContacts: NewsletterContact[];
 }
 
-export type NewsletterStatus = 
-  | 'draft'
-  | 'draft_sent'
-  | 'pending_contacts'
-  | 'ready_to_send'
-  | 'sending'
-  | 'sent'
-  | 'failed';
+export type NewsletterContactStatus = 'pending' | 'sent' | 'failed';
+export type NewsletterStatus = Database['public']['Tables']['newsletters']['Row']['status'];
