@@ -9,8 +9,7 @@ import type {
   NewsletterSection,
   NewsletterContact,
   Contact,
-  NewsletterWithRelations,
-  NewsletterContactWithRelations
+  NewsletterWithRelations
 } from '@/types/email';
 import { APIError } from '@/utils/errors';
 
@@ -106,7 +105,7 @@ export async function POST(req: Request) {
       `)
       .eq('newsletter_id', newsletterId)
       .eq('status', 'pending')
-      .returns<NewsletterContactWithRelations[]>();
+      .returns<(NewsletterContact & { contact: Contact })[]>();
 
     if (contactsError) {
       throw new APIError('Failed to fetch contacts', 500);
@@ -205,10 +204,11 @@ export async function POST(req: Request) {
 
     console.error('Error sending newsletter:', error);
     return NextResponse.json(
-      {
-        error: error instanceof APIError ? error.message : 'Failed to send newsletter'
-      },
-      { status: error instanceof APIError ? error.status : 500 }
+      { 
+        success: false, 
+        message: error instanceof APIError ? error.message : 'Failed to send newsletter'
+      }, 
+      { status: error instanceof APIError ? error.statusCode : 500 }
     );
   }
 }
