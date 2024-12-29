@@ -8,6 +8,8 @@ import { APIError } from '@/utils/errors';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+type NewsletterSection = Database['public']['Tables']['newsletter_sections']['Row'];
+
 export async function POST(req: Request) {
   try {
     const { newsletterId } = await req.json();
@@ -59,10 +61,9 @@ export async function POST(req: Request) {
 
     // Format sections into HTML
     const formattedContent = newsletter.sections
-      .sort((a: Database['public']['Tables']['newsletter_sections']['Row'], 
-             b: Database['public']['Tables']['newsletter_sections']['Row']) => 
+      .sort((a: NewsletterSection, b: NewsletterSection) => 
         a.section_number - b.section_number)
-      .map(section => `
+      .map((section: NewsletterSection) => `
         <div class="newsletter-section">
           <h2>${section.title}</h2>
           ${section.content}
