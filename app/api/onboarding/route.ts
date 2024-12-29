@@ -13,19 +13,18 @@ export const maxDuration = 300; // Set max duration to 5 minutes
 
 export async function POST(req: NextRequest) {
   try {
+    console.log('API: Received onboarding request');
+    
     // Get form data
     const formData = await req.formData();
-    
-    // Log the start of processing
-    console.log('Starting onboarding process...');
-    console.log('Form data received:', Object.fromEntries(formData.entries()));
+    console.log('API: Form data received:', Object.fromEntries(formData.entries()));
 
     // Validate required fields
     const requiredFields = ['company_name', 'industry', 'contact_email'];
     for (const field of requiredFields) {
       const value = formData.get(field);
       if (!value) {
-        console.error(`Missing required field: ${field}`);
+        console.error(`API: Missing required field: ${field}`);
         return NextResponse.json(
           { success: false, message: `Missing required field: ${field}` },
           { status: 400 }
@@ -44,7 +43,7 @@ export async function POST(req: NextRequest) {
       audience_description: (formData.get('audience_description') as string) || null,
     };
 
-    console.log('Prepared company data:', companyData);
+    console.log('API: Prepared company data:', companyData);
 
     // Insert company data
     const { data: company, error: insertError } = await supabaseAdmin
@@ -54,216 +53,147 @@ export async function POST(req: NextRequest) {
       .single();
 
     if (insertError) {
-      console.error('Company insertion error:', insertError);
-      throw new DatabaseError(`Failed to insert company data: ${insertError.message}`);
+      console.error('API: Company insertion error:', insertError);
+      throw new DatabaseError('Failed to create company');
     }
 
-    console.log('Company inserted successfully:', company);
+    console.log('API: Company created successfully:', company);
 
-    // Create a new newsletter entry
-    const newsletterData = {
-      company_id: company.id,
-      title: `${companyData.company_name}'s Industry Newsletter`,
-      status: 'draft',
-      draft_status: 'pending',
-      draft_recipient_email: companyData.contact_email,
-    };
-
-    console.log('Creating newsletter with data:', newsletterData);
-
+    // Insert newsletter data with all fields from the schema
     const { data: newsletter, error: newsletterError } = await supabaseAdmin
       .from('newsletters')
-      .insert([newsletterData])
+      .insert({
+        company_id: company.id,
+        subject: `${companyData.company_name} - Welcome Newsletter`,
+        draft_status: 'pending',
+        draft_recipient_email: companyData.contact_email
+      })
       .select()
       .single();
 
     if (newsletterError) {
-      console.error('Newsletter creation error:', newsletterError);
-      throw new DatabaseError(`Failed to create newsletter: ${newsletterError.message}`);
+      console.error('API: Failed to create newsletter:', newsletterError);
+      throw new DatabaseError('Failed to create newsletter');
     }
 
-    // Generate newsletter content
-    console.log('Generating newsletter content...');
-    try {
-      const sections = await generateNewsletter(newsletter.id);
-      console.log('Newsletter sections generated:', sections);
+    console.log('API: Newsletter created successfully:', newsletter);
 
-      // Insert sections into newsletter_sections table
-      for (let i = 0; i < sections.length; i++) {
-        const section = sections[i];
-        const sectionData = {
+    // Generate and insert newsletter sections
+    console.log('API: Generating newsletter sections...');
+    const sections = await generateNewsletter(newsletter.id);
+    console.log('API: Newsletter sections generated:', sections);
+
+    // Insert newsletter sections
+    for (let i = 0; i < sections.length; i++) {
+      const section = sections[i];
+      const { data: insertedSection, error: sectionError } = await supabaseAdmin
+        .from('newsletter_sections')
+        .insert({
           newsletter_id: newsletter.id,
-          section_number: i + 1,  // Ensures proper ordering per newsletter_sections_newsletter_id_section_number_key
+          section_number: i + 1,
           title: section.title,
           content: section.content,
-          image_prompt: section.imagePrompt || null,
-          image_url: section.imageUrl || null,
-          status: 'active'
-        };
+          image_prompt: section.image_prompt || null,
+          image_url: section.image_url || null
+        })
+        .select()
+        .single();
 
-        const { data: insertedSection, error: sectionError } = await supabaseAdmin
-          .from('newsletter_sections')
-          .insert([sectionData])
-          .select()
-          .single();
-
-        if (sectionError) {
-          console.error(`Failed to insert section ${i + 1}:`, sectionError);
-          continue;
-        }
-
-        // If image was generated, record it in image_generation_history
-        if (section.imageUrl && section.imagePrompt) {
-          const { error: imageHistoryError } = await supabaseAdmin
-            .from('image_generation_history')
-            .insert([{
-              newsletter_section_id: insertedSection.id,
-              prompt: section.imagePrompt,
-              image_url: section.imageUrl,
-              status: 'completed'
-            }]);
-
-          if (imageHistoryError) {
-            console.error('Failed to record image generation:', imageHistoryError);
-          }
-        }
-
-        // Update the section object with the database ID
-        section.id = insertedSection.id;
+      if (sectionError) {
+        console.error(`API: Failed to insert section ${i + 1}:`, sectionError);
+        continue;
       }
 
-      // Format newsletter for email
-      const htmlContent = `
-        <div style="font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px;">
-          <h1 style="color: #1a365d; text-align: center; margin-bottom: 30px;">${newsletterData.title}</h1>
-          <p style="color: #4a5568; margin-bottom: 30px; text-align: center; font-size: 1.1em;">
-            A custom industry newsletter crafted for ${company.company_name}
-          </p>
-          
-          ${sections.map((section, index) => {
-            // Parse the content into structured parts
-            const contentParts = section.content.split('\n\n').filter(Boolean);
-            const headline = contentParts[0]?.replace('Headline:', '').trim();
-            const introduction = contentParts[1]?.replace('Introduction:', '').trim();
-            const whyItMatters = contentParts[2]?.replace('Why It Matters:', '').trim().split('\n');
-            const solution = contentParts[3]?.replace('The Solution:', '').trim();
-            const takeaway = contentParts[4]?.replace('The Takeaway:', '').trim();
+      // Record image generation if it exists
+      if (section.image_prompt) {
+        const { error: imageHistoryError } = await supabaseAdmin
+          .from('image_generation_history')
+          .insert({
+            newsletter_section_id: insertedSection.id,
+            prompt: section.image_prompt,
+            status: section.image_url ? 'completed' : 'failed',
+            image_url: section.image_url || null
+          });
 
-            return `
-              <div style="margin-bottom: 60px; background-color: #ffffff; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
-                <h2 style="color: #2b6cb0; margin-bottom: 20px; font-size: 1.8em;">${section.title}</h2>
-                
-                ${headline ? `<h3 style="color: #2d3748; margin-bottom: 16px; font-size: 1.4em;">${headline}</h3>` : ''}
-                
-                ${introduction ? `
-                  <div style="color: #4a5568; line-height: 1.8; margin-bottom: 24px; font-size: 1.1em;">
-                    ${introduction}
-                  </div>
-                ` : ''}
-                
-                ${whyItMatters ? `
-                  <div style="margin: 24px 0;">
-                    <h4 style="color: #2d3748; margin-bottom: 16px;">Why It Matters:</h4>
-                    <ul style="color: #4a5568; line-height: 1.6; padding-left: 20px;">
-                      ${whyItMatters.map(point => `
-                        <li style="margin-bottom: 8px;">${point.trim().replace('- ', '')}</li>
-                      `).join('')}
-                    </ul>
-                  </div>
-                ` : ''}
-                
-                ${solution ? `
-                  <div style="margin: 24px 0;">
-                    <h4 style="color: #2d3748; margin-bottom: 16px;">The Solution:</h4>
-                    <div style="color: #4a5568; line-height: 1.7;">
-                      ${solution}
-                    </div>
-                  </div>
-                ` : ''}
-
-                ${section.imageUrl ? `
-                  <div style="margin: 32px 0; text-align: center;">
-                    <img src="${section.imageUrl}" 
-                         alt="${section.title}" 
-                         style="max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
-                    <p style="color: #718096; font-size: 0.9em; margin-top: 8px; font-style: italic;">
-                      Generated image based on section theme
-                    </p>
-                  </div>
-                ` : ''}
-                
-                ${takeaway ? `
-                  <div style="margin-top: 24px; padding: 20px; background-color: #f7fafc; border-radius: 8px;">
-                    <h4 style="color: #2d3748; margin-bottom: 12px;">Key Takeaway:</h4>
-                    <div style="color: #4a5568; line-height: 1.7;">
-                      ${takeaway}
-                    </div>
-                  </div>
-                ` : ''}
-              </div>
-            `;
-          }).join('\n')}
-
-          <div style="margin-top: 40px; padding: 24px; border-top: 2px solid #e2e8f0; background-color: #f7fafc; border-radius: 8px;">
-            <h3 style="color: #2d3748; margin-bottom: 16px;">Next Steps:</h3>
-            <ol style="color: #4a5568; line-height: 1.6;">
-              <li style="margin-bottom: 8px;">Review the content and generated images above</li>
-              <li style="margin-bottom: 8px;">Prepare your contact list in CSV format</li>
-              <li style="margin-bottom: 8px;">Reply to this email with any requested changes</li>
-            </ol>
-            <p style="color: #718096; font-size: 0.875rem; margin-top: 16px;">
-              Note: Each section includes an AI-generated image based on the content theme. If you'd like different images, let us know in your reply.
-            </p>
-          </div>
-        </div>
-      `;
-
-      // Send draft newsletter via email
-      await sendNewsletter(
-        [{ email: companyData.contact_email }],
-        `[DRAFT] ${newsletterData.title}`,
-        htmlContent
-      );
-
-      // Update newsletter status
-      const { error: updateError } = await supabaseAdmin
-        .from('newsletters')
-        .update({ 
-          status: 'draft_sent',
-          draft_status: 'sent',
-          draft_sent_at: new Date().toISOString()
-        })
-        .eq('id', newsletter.id);
-
-      if (updateError) {
-        console.error('Failed to update newsletter status:', updateError);
+        if (imageHistoryError) {
+          console.error('API: Failed to record image generation:', imageHistoryError);
+        }
       }
-
-      console.log('Newsletter draft sent successfully');
-
-    } catch (error) {
-      console.error('Failed in newsletter process:', error);
-      // Update status to failed
-      await supabaseAdmin
-        .from('newsletters')
-        .update({ 
-          draft_status: 'failed',
-          status: 'draft'
-        })
-        .eq('id', newsletter.id);
     }
+
+    // Wait a bit to ensure all database operations are complete
+    console.log('API: Waiting for all processes to complete...');
+    await new Promise(resolve => setTimeout(resolve, 5000)); // 5 second delay
+
+    // Double check that all sections and images are properly saved
+    const { data: savedSections, error: fetchError } = await supabaseAdmin
+      .from('newsletter_sections')
+      .select('*, image_generation_history(*)')
+      .eq('newsletter_id', newsletter.id)
+      .order('section_number');
+
+    if (fetchError) {
+      console.error('API: Failed to fetch saved sections:', fetchError);
+      throw new DatabaseError('Failed to verify newsletter sections');
+    }
+
+    // Verify all sections are present and images are generated
+    if (!savedSections || savedSections.length !== sections.length) {
+      console.error('API: Missing sections:', { expected: sections.length, found: savedSections?.length });
+      throw new Error('Newsletter sections are incomplete');
+    }
+
+    // Format the newsletter content with verified saved sections
+    const formattedContent = savedSections.map((section) => `
+      <div class="newsletter-section">
+        <h2>${section.title}</h2>
+        ${section.image_url ? `<img src="${section.image_url}" alt="${section.title}" style="max-width: 100%; height: auto; margin: 20px 0;">` : ''}
+        <div class="content">
+          ${section.content.split('\n').map((line: string) => `<p>${line}</p>`).join('\n')}
+        </div>
+      </div>
+    `).join('\n\n');
+
+    // Send draft email with the verified content
+    const emailContact = {
+      email: companyData.contact_email,
+      name: companyData.company_name
+    };
+
+    console.log('API: Sending draft email to:', emailContact);
+    
+    await sendNewsletter(
+      [emailContact],
+      `${companyData.company_name} - Welcome Newsletter Draft`,
+      formattedContent
+    );
+    
+    console.log('API: Newsletter draft sent successfully');
+
+    // Update newsletter status to draft_sent
+    const { error: updateError } = await supabaseAdmin
+      .from('newsletters')
+      .update({ 
+        draft_status: 'draft_sent',
+        draft_sent_at: new Date().toISOString()
+      })
+      .eq('id', newsletter.id);
+
+    if (updateError) {
+      console.error('API: Failed to update newsletter status:', updateError);
+      throw new DatabaseError('Failed to update newsletter status');
+    }
+
+    console.log('API: Newsletter status updated successfully');
 
     return NextResponse.json({
       success: true,
-      message: 'Onboarding completed successfully',
-      data: {
-        company_id: company.id,
-        newsletter_id: newsletter.id,
-      }
+      message: 'Newsletter draft created and sent successfully',
+      data: { newsletter_id: newsletter.id }
     });
 
   } catch (error) {
-    console.error('Onboarding error:', error);
+    console.error('API: Onboarding error:', error);
     return NextResponse.json(
       { 
         success: false, 

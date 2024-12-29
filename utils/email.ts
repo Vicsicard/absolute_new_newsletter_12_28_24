@@ -1,4 +1,5 @@
 import { EmailContact, BulkEmailResult } from '@/types/email';
+import { supabaseAdmin } from './supabase-admin';
 
 if (!process.env.BREVO_API_KEY) {
   throw new Error('Missing BREVO_API_KEY environment variable');
@@ -25,6 +26,21 @@ export async function sendEmail(
   htmlContent: string
 ): Promise<string> {
   try {
+    const sender = {
+      email: process.env.BREVO_SENDER_EMAIL,
+      name: process.env.BREVO_SENDER_NAME
+    };
+
+    if (!sender.email || !sender.name) {
+      throw new Error('Missing BREVO_SENDER_EMAIL or BREVO_SENDER_NAME environment variables');
+    }
+
+    console.log('Sending email:', {
+      to,
+      subject,
+      sender
+    });
+
     const response = await fetch(BREVO_API_URL, {
       method: 'POST',
       headers: {
@@ -33,9 +49,10 @@ export async function sendEmail(
         'content-type': 'application/json',
       },
       body: JSON.stringify({
+        sender,
         to: [{
           email: to.email,
-          name: to.name,
+          name: to.name || to.email,
         }],
         subject,
         htmlContent,
@@ -51,7 +68,7 @@ export async function sendEmail(
     return data.messageId;
   } catch (error) {
     console.error('Failed to send email:', error);
-    throw error;
+    throw new Error(error instanceof Error ? error.message : 'Failed to send email');
   }
 }
 
@@ -130,6 +147,33 @@ export async function sendBulkEmails(
   }
 
   return results;
+}
+
+/**
+ * Send a newsletter to a list of contacts
+ * Returns results for both successful and failed sends
+ * Updates newsletter status if newsletterId is provided
+ */
+export async function sendNewsletter(
+  to: EmailContact[],
+  subject: string,
+  htmlContent: string,
+  newsletterId?: string
+): Promise<BulkEmailResult> {
+  const result = await sendBulkEmails(to, subject, htmlContent);
+
+  // Update newsletter status if newsletterId is provided
+  if (newsletterId) {
+    await supabaseAdmin
+      .from('newsletters')
+      .update({
+        status: result.failed.length === 0 ? 'sent' : 'failed',
+        sent_at: new Date().toISOString()
+      })
+      .eq('id', newsletterId);
+  }
+
+  return result;
 }
 
 export function validateEmail(email: string): boolean {

@@ -28,55 +28,36 @@ export default function Home() {
 
     try {
       const formData = new FormData(e.target as HTMLFormElement);
+      console.log('Form data before validation:', Object.fromEntries(formData));
+
       const errors = validateForm(formData);
       if (Object.keys(errors).length > 0) {
         setFormErrors(errors);
+        setIsLoading(false);
         throw new Error('Please fix the form errors');
       }
 
+      console.log('Sending request to /api/onboarding...');
       const response = await fetch('/api/onboarding', {
         method: 'POST',
         body: formData,
       });
 
-      console.log('Submitting form data...', Object.fromEntries(formData));
+      console.log('Response received:', response.status);
+      const data = await response.json();
+      console.log('Response data:', data);
 
       if (!response.ok) {
-        throw new Error('Failed to submit form');
+        throw new Error(data.message || 'Failed to submit form');
       }
 
-      console.log('Response status:', response.status);
-      const responseText = await response.text();
-      console.log('Raw response:', responseText);
-
-      const data = JSON.parse(responseText);
-      console.log('Parsed response data:', data);
-      
-      if (data.success) {
-        const email = formData.get('contact_email') as string;
-        setSuccess(
-          `Thank you for signing up!\n\n` +
-          `A draft of your newsletter will be emailed to ${email} within the next hour.\n` +
-          `Please check your spam folder if you don't see it in your inbox.\n\n` +
-          `The email will include instructions for uploading your contact list once you're ready to send the newsletter.`
-        );
-        
-        // Clear the form using the form reference
-        if (formRef.current) {
-          formRef.current.reset();
-        }
-      } else {
-        throw new Error(data.message || 'Unknown error occurred');
+      setSuccess('Newsletter setup completed! Check your email for the draft.');
+      if (formRef.current) {
+        formRef.current.reset();
       }
-    } catch (error) {
-      console.error('Detailed error:', error);
-      if (error instanceof Error && error.name === 'AbortError') {
-        setError('Request timed out. Please try again.');
-      } else if (error instanceof Error) {
-        setError(error.message);
-      } else {
-        setError('Failed to process request');
-      }
+    } catch (err) {
+      console.error('Form submission error:', err);
+      setError(err instanceof Error ? err.message : 'An unexpected error occurred');
     } finally {
       setIsLoading(false);
     }

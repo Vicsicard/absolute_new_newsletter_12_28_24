@@ -1,10 +1,12 @@
 export class APIError extends Error {
   statusCode: number;
-  
-  constructor(message: string, statusCode: number = 500) {
+  status: number;
+
+  constructor(message: string, status: number = 500) {
     super(message);
     this.name = 'APIError';
-    this.statusCode = statusCode;
+    this.statusCode = status;
+    this.status = status;
   }
 }
 
@@ -29,9 +31,9 @@ export class NotFoundError extends APIError {
   }
 }
 
-export class DatabaseError extends APIError {
+export class DatabaseError extends Error {
   constructor(message: string = 'Database operation failed') {
-    super(message, 500);
+    super(message);
     this.name = 'DatabaseError';
   }
 }

@@ -1,105 +1,87 @@
 import { NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/utils/supabase-admin';
 import { sendBulkEmails } from '@/utils/email';
-import { ApiResponse } from '@/types/api';
-import { DatabaseError } from '@/utils/errors';
-import { getNewsletterWithContacts, updateNewsletterStatus, updateNewsletterContactStatus } from '@/utils/supabase';
+import { supabaseAdmin } from '@/utils/supabase-admin';
+import { updateNewsletterStatus } from '@/utils/supabase';
+import type { EmailContact } from '@/types/email';
+import { APIError } from '@/utils/errors';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-export async function POST(request: Request) {
+export async function POST(req: Request) {
   try {
-    const { newsletterId } = await request.json();
+    const { newsletterId, subject, content } = await req.json();
 
-    // Fetch newsletter with its company and contact information
-    const newsletter = await getNewsletterWithContacts(newsletterId);
-    if (!newsletter) throw new DatabaseError('Newsletter not found');
-
-    // Filter out contacts and ensure they are active
-    const activeContacts = newsletter.newsletter_contacts
-      ?.filter(nc => nc.contact && nc.contact.email && nc.contact.status === 'active')
-      .map(nc => ({
-        newsletterContactId: nc.id,
-        contact: nc.contact
-      }));
-
-    if (!activeContacts?.length) {
-      throw new Error('No active contacts found for this newsletter');
+    if (!newsletterId || !subject || !content) {
+      throw new APIError('Missing required fields', 400);
     }
+
+    // Get all contacts for this newsletter
+    const { data: contacts, error: contactsError } = await supabaseAdmin
+      .from('newsletter_contacts')
+      .select(`
+        *,
+        contact:contacts (*)
+      `)
+      .eq('newsletter_id', newsletterId);
+
+    if (contactsError) {
+      throw new APIError('Failed to fetch contacts', 500);
+    }
+
+    if (!contacts || contacts.length === 0) {
+      throw new APIError('No contacts found for this newsletter', 400);
+    }
+
+    // Update newsletter status to sending
+    await supabaseAdmin
+      .from('newsletters')
+      .update({ status: 'sending' })
+      .eq('id', newsletterId);
 
     // Send the newsletter
     const results = await sendBulkEmails(
-      activeContacts.map(({ contact }) => ({
-        email: contact.email,
-        name: contact.name
+      contacts.map(c => ({
+        email: c.contact.email,
+        name: c.contact.name
       })),
-      newsletter.subject,
-      newsletter.content
+      subject,
+      content
     );
 
-    // Update newsletter status
-    await updateNewsletterStatus(
-      newsletterId,
-      'sent',
-      new Date().toISOString()
-    );
+    // Update newsletter status based on results
+    await supabaseAdmin
+      .from('newsletters')
+      .update({ 
+        status: results.failed.length === 0 ? 'sent' : 'failed',
+        sent_at: new Date().toISOString()
+      })
+      .eq('id', newsletterId);
 
-    // Update successful sends
-    if (results.successful.length > 0) {
-      const successfulEmails = new Set(results.successful.map(r => r.email.toLowerCase()));
-      const successfulContacts = activeContacts
-        .filter(({ contact }) => successfulEmails.has(contact.email.toLowerCase()));
+    // Update contact statuses
+    const successful = new Set(results.successful.map(s => s.email));
+    await Promise.all(contacts.map(async (contact) => {
+      const status = successful.has(contact.contact.email) ? 'sent' : 'failed';
+      await supabaseAdmin
+        .from('newsletter_contacts')
+        .update({ status })
+        .eq('id', contact.id);
+    }));
 
-      // Update each successful contact's status
-      await Promise.all(
-        successfulContacts.map(({ newsletterContactId }) =>
-          updateNewsletterContactStatus(
-            newsletterContactId,
-            'sent',
-            new Date().toISOString()
-          )
-        )
-      );
-    }
-
-    // Update failed sends
-    const failedContacts = activeContacts
-      .filter(({ contact }) => 
-        !results.successful.some(r => 
-          r.email.toLowerCase() === contact.email.toLowerCase()
-        )
-      );
-
-    if (failedContacts.length > 0) {
-      // Update each failed contact's status
-      await Promise.all(
-        failedContacts.map(({ newsletterContactId }) =>
-          updateNewsletterContactStatus(
-            newsletterContactId,
-            'failed'
-          )
-        )
-      );
-    }
-
-    const response: ApiResponse = {
+    return NextResponse.json({
       success: true,
-      message: 'Newsletter sent successfully',
       data: {
         totalSent: results.successful.length,
-        totalFailed: failedContacts.length,
-        results,
-      },
-    };
+        totalFailed: results.failed.length,
+        failed: results.failed
+      }
+    });
 
-    return NextResponse.json(response);
   } catch (error) {
     console.error('Error sending newsletter:', error);
-    const response: ApiResponse = {
+    return NextResponse.json({
       success: false,
-      message: error instanceof Error ? error.message : 'Failed to send newsletter',
-    };
-    return NextResponse.json(response, { status: 500 });
+      message: error instanceof APIError ? error.message : 'Failed to send newsletter',
+    }, { status: error instanceof APIError ? error.status : 500 });
   }
 }

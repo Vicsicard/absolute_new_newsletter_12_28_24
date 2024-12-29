@@ -3,6 +3,7 @@ import { Database } from './supabase';
 
 type Contact = Database['public']['Tables']['contacts']['Row'];
 type NewsletterContact = Database['public']['Tables']['newsletter_contacts']['Row'];
+type Newsletter = Database['public']['Tables']['newsletters']['Row'];
 
 export interface EmailContact {
   email: string;
@@ -48,3 +49,12 @@ export interface NewsletterSendResult extends BulkEmailResult {
   totalFailed: number;
   updatedContacts: NewsletterContact[];
 }
+
+export type NewsletterStatus = 
+  | 'draft'
+  | 'draft_sent'
+  | 'pending_contacts'
+  | 'ready_to_send'
+  | 'sending'
+  | 'sent'
+  | 'failed';

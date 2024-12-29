@@ -52,7 +52,7 @@ export async function getLatestNewsletter(companyId: string): Promise<Newsletter
       company:companies(*)
     `)
     .eq('company_id', companyId)
-    .eq('status', 'draft')
+    .eq('draft_status', 'draft')
     .order('created_at', { ascending: false })
     .limit(1)
     .single()
@@ -82,18 +82,26 @@ export async function getActiveContacts(companyId: string): Promise<Contact[]> {
  */
 export async function updateNewsletterStatus(
   id: string,
-  status: Newsletter['status'],
-  sentAt?: string
+  status: 'draft' | 'sent' | 'failed',
+  sentAt?: string | null
 ): Promise<void> {
+  const updateData: Partial<Newsletter> = {
+    status,
+  }
+
+  if (sentAt) {
+    updateData.sent_at = sentAt
+  }
+
   const { error } = await supabase
     .from('newsletters')
-    .update({
-      status,
-      sent_at: sentAt,
-    })
+    .update(updateData)
     .eq('id', id)
 
-  if (error) throw error
+  if (error) {
+    console.error('Failed to update newsletter status:', error)
+    throw error
+  }
 }
 
 /**
@@ -130,16 +138,22 @@ export async function getNewsletterWithContacts(
     .from('newsletters')
     .select(`
       *,
-      company:companies(*),
-      newsletter_contacts(*, contact:contacts(*)),
-      newsletter_sections(*)
+      companies (*),
+      newsletter_contacts (
+        id,
+        status,
+        contact (*)
+      ),
+      newsletter_sections (
+        *
+      )
     `)
     .eq('id', newsletterId)
-    .order('newsletter_sections.section_number', { ascending: true })
-    .single()
+    .order('section_number', { foreignTable: 'newsletter_sections' })
+    .single();
 
-  if (error) throw error
-  return data
+  if (error) throw error;
+  return data;
 }
 
 /**

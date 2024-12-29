@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Image from 'next/image';
 import { parseNewsletterSection } from '@/utils/newsletter-client';
-import type { NewsletterSection } from '@/utils/newsletter-client';
+import type { NewsletterSectionInput } from '@/utils/newsletter-client';
 
 interface NewsletterPageProps {
   params: {
@@ -77,7 +77,7 @@ export default function NewsletterPage({ params }: NewsletterPageProps) {
     }
   };
 
-  const renderSection = (section: NewsletterSection, index: number) => (
+  const renderSection = (section: NewsletterSectionInput, index: number) => (
     <div key={index} className="mb-8 p-6 bg-white rounded-lg shadow-md">
       <h2 className="text-2xl font-bold mb-4">{section.title}</h2>
       <div className="prose max-w-none">
@@ -87,14 +87,14 @@ export default function NewsletterPage({ params }: NewsletterPageProps) {
           </p>
         ))}
       </div>
-      {section.imageUrl && (
+      {section.image_url && (
         <div className="mt-4">
           <Image
-            src={section.imageUrl}
+            src={section.image_url}
             alt={section.title}
-            width={600}
+            width={800}
             height={400}
-            className="rounded-lg"
+            className="rounded-lg shadow-md"
           />
         </div>
       )}
@@ -143,7 +143,7 @@ export default function NewsletterPage({ params }: NewsletterPageProps) {
 
       {newsletter && newsletter.sections && (
         <div className="space-y-8">
-          {newsletter.sections.map((section: NewsletterSection, index: number) =>
+          {newsletter.sections.map((section: NewsletterSectionInput, index: number) =>
             renderSection(section, index)
           )}
         </div>

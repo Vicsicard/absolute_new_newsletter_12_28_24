@@ -1,15 +1,18 @@
 import { supabaseClient } from './supabase-client'
+import { Database } from '@/types/supabase'
 
-export interface NewsletterSection {
+type NewsletterSection = Database['public']['Tables']['newsletter_sections']['Row']
+
+export interface NewsletterSectionInput {
   title: string
   content: string
-  imagePrompt?: string
-  imageUrl?: string
+  image_prompt?: string
+  image_url?: string
 }
 
-export const parseNewsletterSection = (content?: string): NewsletterSection | null => {
-  if (!content) return null
-  const lines = content.split('\n')
+export const parseNewsletterSection = (text?: string): NewsletterSectionInput | null => {
+  if (!text) return null
+  const lines = text.split('\n')
   const title = lines[0].replace('# ', '')
   const contentStart = lines.findIndex(line => line.startsWith('Content: '))
   const imagePromptStart = lines.findIndex(line => line.startsWith('Image Prompt: '))
@@ -19,23 +22,23 @@ export const parseNewsletterSection = (content?: string): NewsletterSection | nu
   const contentLines = lines.slice(contentStart + 1, imagePromptStart !== -1 ? imagePromptStart : undefined)
   const content = contentLines.join('\n').trim()
   
-  const section: NewsletterSection = {
+  const section: NewsletterSectionInput = {
     title,
     content,
   }
 
   if (imagePromptStart !== -1) {
-    section.imagePrompt = lines[imagePromptStart].replace('Image Prompt: ', '').trim()
+    section.image_prompt = lines[imagePromptStart].replace('Image Prompt: ', '').trim()
   }
 
   return section
 }
 
-export const parseNewsletterContent = (content: string): NewsletterSection[] => {
+export const parseNewsletterContent = (content: string): NewsletterSectionInput[] => {
   const sections = content.split('\n\n')
   return sections
     .map(section => parseNewsletterSection(section))
-    .filter((section): section is NewsletterSection => section !== null)
+    .filter((section): section is NewsletterSectionInput => section !== null)
 }
 
 export const formatNewsletterHtml = (content: string) => {

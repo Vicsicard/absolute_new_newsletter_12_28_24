@@ -1,4 +1,5 @@
 import OpenAI from 'openai'
+import { Database } from '@/types/supabase'
 import { supabaseAdmin } from './supabase-admin'
 import { DatabaseError } from './errors'
 
@@ -16,12 +17,18 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 })
 
+type DbNewsletterSection = Database['public']['Tables']['newsletter_sections']['Row']
+
 export interface NewsletterSection {
-  id?: number
+  id?: string
+  newsletter_id?: string
+  section_number: number
   title: string
   content: string
-  imagePrompt?: string
-  imageUrl?: string
+  image_prompt?: string
+  image_url?: string
+  created_at?: string
+  updated_at?: string
 }
 
 export async function generateNewsletter(newsletterId: string): Promise<NewsletterSection[]> {
@@ -89,23 +96,23 @@ Audience Description: ${newsletter.company.audience_description || 'Businesses i
 
   // Generate images for each section
   for (const section of sections) {
-    if (section.imagePrompt) {
+    if (section.image_prompt) {
       try {
         const imageResponse = await openai.images.generate({
           model: "dall-e-3",
-          prompt: section.imagePrompt,
+          prompt: section.image_prompt,
           n: 1,
           size: "1024x1024",
           quality: "standard",
-          style: "vivid"
+          style: "natural"
         });
 
-        if (imageResponse.data && imageResponse.data[0]) {
-          section.imageUrl = imageResponse.data[0].url;
+        if (imageResponse.data && imageResponse.data[0]?.url) {
+          section.image_url = imageResponse.data[0].url;
         }
       } catch (error) {
-        console.error('Failed to generate image:', error);
-        // Don't store errors here - that's handled in the onboarding route
+        console.error('Error generating image:', error);
+        // Continue with other sections even if image generation fails
       }
     }
   }
@@ -136,20 +143,20 @@ export function parseNewsletterSection(sectionText?: string): NewsletterSection 
   
   if (!content) return null // Empty content is not valid
 
-  const section: NewsletterSection = {
+  const section: Partial<NewsletterSection> = {
     title: title.trim(),
     content: content,
   }
 
-  // Extract image prompt if present
+  // Look for image prompt
   if (imagePromptStart !== -1 && imagePromptStart + 1 < lines.length) {
     const imagePrompt = lines.slice(imagePromptStart + 1).join(' ').trim()
     if (imagePrompt) {
-      section.imagePrompt = imagePrompt
+      section.image_prompt = imagePrompt
     }
   }
 
-  return section
+  return section as NewsletterSection;
 }
 
 export function parseNewsletterContent(text: string): NewsletterSection[] {
@@ -171,6 +178,22 @@ export async function sendNewsletter(
   htmlContent: string,
   from = { email: process.env.BREVO_SENDER_EMAIL || 'newsletter@example.com', name: process.env.BREVO_SENDER_NAME || 'Newsletter Service' }
 ) {
+  console.log('Sending newsletter with:', {
+    to,
+    subject,
+    from,
+    apiKey: process.env.BREVO_API_KEY ? 'Present' : 'Missing'
+  });
+
+  const requestBody = {
+    sender: from,
+    to,
+    subject,
+    htmlContent,
+  };
+  
+  console.log('Request body:', JSON.stringify(requestBody, null, 2));
+
   const response = await fetch(BREVO_API_ENDPOINT, {
     method: 'POST',
     headers: {
@@ -178,20 +201,16 @@ export async function sendNewsletter(
       'api-key': process.env.BREVO_API_KEY!,
       'content-type': 'application/json',
     },
-    body: JSON.stringify({
-      sender: from,
-      to,
-      subject,
-      htmlContent,
-    }),
-  })
+    body: JSON.stringify(requestBody),
+  });
 
   if (!response.ok) {
-    const error = await response.json()
-    throw new Error(`Failed to send email: ${error.message}`)
+    const error = await response.json();
+    console.error('Brevo API error:', error);
+    throw new Error(`Failed to send email: ${error.message}`);
   }
 
-  return response.json()
+  return response.json();
 }
 
 export function validateEmailList(emails: string[]) {
