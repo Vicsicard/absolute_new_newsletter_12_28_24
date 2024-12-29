@@ -10,7 +10,8 @@ import type {
   NewsletterContact,
   NewsletterStatus,
   ContactStatus,
-  NewsletterContactStatus
+  NewsletterContactStatus,
+  DraftStatus
 } from '@/types/email';
 
 // Configure API route
@@ -45,7 +46,7 @@ export async function POST(req: NextRequest) {
       phone_number: formData.get('phone_number') as string || null
     };
 
-    // Start a transaction
+    // Create company
     const { data: company, error: companyError } = await supabaseAdmin
       .from('companies')
       .insert(companyData)
@@ -56,55 +57,52 @@ export async function POST(req: NextRequest) {
       throw new APIError('Failed to create company', 500);
     }
 
-    // Process contacts CSV if provided
-    const contactsFile = formData.get('contacts') as File;
-    let contacts: Contact[] = [];
-
-    if (contactsFile) {
-      const fileContent = await contactsFile.text();
-      const rows = fileContent
-        .split('\n')
-        .slice(1) // Skip header row
-        .filter(row => row.trim()) // Remove empty rows
-        .map(row => {
-          const [email, name] = row.split(',').map(field => field.trim());
-          return {
+    // Parse and validate contacts
+    const contactsData = formData.get('contacts');
+    let contacts: Array<Partial<Contact>> = [];
+    if (contactsData) {
+      try {
+        const parsedContacts = JSON.parse(contactsData as string);
+        if (Array.isArray(parsedContacts)) {
+          contacts = parsedContacts.map(contact => ({
             company_id: company.id,
-            email,
-            name: name || null,
+            email: contact.email,
+            name: contact.name || null,
             status: 'active' as ContactStatus
-          };
-        });
-
-      // Validate emails and insert contacts
-      const validContacts = rows.filter(contact => {
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        return emailRegex.test(contact.email);
-      });
-
-      if (validContacts.length > 0) {
-        const { data: insertedContacts, error: contactsError } = await supabaseAdmin
-          .from('contacts')
-          .insert(validContacts)
-          .select();
-
-        if (contactsError) {
-          throw new APIError('Failed to create contacts', 500);
+          }));
         }
-
-        contacts = insertedContacts;
+      } catch (error) {
+        console.error('Error parsing contacts:', error);
       }
     }
 
-    // Create initial newsletter
+    // Create contacts if any
+    let createdContacts: Contact[] = [];
+    if (contacts.length > 0) {
+      const { data: insertedContacts, error: contactsError } = await supabaseAdmin
+        .from('contacts')
+        .insert(contacts)
+        .select();
+
+      if (contactsError) {
+        throw new APIError('Failed to create contacts', 500);
+      }
+
+      if (insertedContacts) {
+        createdContacts = insertedContacts;
+      }
+    }
+
+    // Create initial newsletter with draft status
     const newsletterData: Partial<Newsletter> = {
       company_id: company.id,
       subject: `${company.company_name} Newsletter`,
-      status: 'draft' as NewsletterStatus,
-      draft_status: 'pending',
+      draft_status: 'pending' as DraftStatus,
       draft_recipient_email: company.contact_email,
+      status: 'draft' as NewsletterStatus,
       sent_count: 0,
-      failed_count: 0
+      failed_count: 0,
+      last_sent_status: null
     };
 
     const { data: newsletter, error: newsletterError } = await supabaseAdmin
@@ -118,11 +116,13 @@ export async function POST(req: NextRequest) {
     }
 
     // Create newsletter contacts entries
-    if (contacts.length > 0) {
-      const newsletterContacts: Partial<NewsletterContact>[] = contacts.map(contact => ({
+    if (createdContacts.length > 0) {
+      const newsletterContacts: Partial<NewsletterContact>[] = createdContacts.map(contact => ({
         newsletter_id: newsletter.id,
-        contact_id: contact.id!,
-        status: 'pending' as NewsletterContactStatus
+        contact_id: contact.id,
+        status: 'pending' as NewsletterContactStatus,
+        sent_at: null,
+        error_message: null
       }));
 
       const { error: newsletterContactsError } = await supabaseAdmin
@@ -140,7 +140,7 @@ export async function POST(req: NextRequest) {
       data: {
         company_id: company.id,
         newsletter_id: newsletter.id,
-        total_contacts: contacts.length
+        total_contacts: createdContacts.length
       }
     } as OnboardingResponse);
 

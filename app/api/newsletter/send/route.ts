@@ -8,13 +8,14 @@ import type {
   Newsletter,
   NewsletterSection,
   NewsletterContact,
-  Contact
+  Contact,
+  NewsletterWithRelations,
+  NewsletterContactWithRelations
 } from '@/types/email';
 import { APIError } from '@/utils/errors';
 
-// Define the shape of the joined data from Supabase
-interface NewsletterContactWithRelations extends Omit<NewsletterContact, 'contact_id'> {
-  contacts: Contact;
+if (!process.env.BREVO_API_KEY || !process.env.BREVO_SENDER_EMAIL || !process.env.BREVO_SENDER_NAME) {
+  throw new Error('Missing required Brevo environment variables');
 }
 
 // Configure API route
@@ -35,18 +36,8 @@ export async function POST(req: Request) {
     const { data: newsletter, error: newsletterError } = await supabaseAdmin
       .from('newsletters')
       .select(`
-        id,
-        company_id,
-        subject,
-        draft_status,
-        draft_recipient_email,
-        draft_sent_at,
-        status,
-        sent_at,
-        sent_count,
-        failed_count,
-        last_sent_status,
-        companies (
+        *,
+        company:companies (
           id,
           company_name,
           industry,
@@ -56,9 +47,11 @@ export async function POST(req: Request) {
         ),
         newsletter_sections (
           id,
+          newsletter_id,
           section_number,
           title,
           content,
+          image_prompt,
           image_url,
           status,
           created_at,
@@ -66,14 +59,26 @@ export async function POST(req: Request) {
         )
       `)
       .eq('id', newsletterId)
+      .eq('status', 'ready_to_send')
       .order('section_number', { foreignTable: 'newsletter_sections' })
+      .returns<NewsletterWithRelations>()
       .single();
 
     if (newsletterError || !newsletter) {
-      throw new APIError('Failed to fetch newsletter', 500);
+      throw new APIError('Failed to fetch newsletter or newsletter not ready to send', 500);
     }
 
-    // Get all active contacts for this newsletter
+    // Update to sending status
+    const { error: sendingError } = await supabaseAdmin
+      .from('newsletters')
+      .update({ status: 'sending' as NewsletterStatus })
+      .eq('id', newsletterId);
+
+    if (sendingError) {
+      throw new APIError('Failed to update newsletter to sending status', 500);
+    }
+
+    // Get all pending contacts for this newsletter
     const { data: contacts, error: contactsError } = await supabaseAdmin
       .from('newsletter_contacts')
       .select(`
@@ -85,11 +90,14 @@ export async function POST(req: Request) {
         error_message,
         created_at,
         updated_at,
-        contacts!inner (
+        contact:contacts!inner (
           id,
+          company_id,
           email,
           name,
-          status
+          status,
+          created_at,
+          updated_at
         )
       `)
       .eq('newsletter_id', newsletterId)
@@ -100,16 +108,16 @@ export async function POST(req: Request) {
       throw new APIError('Failed to fetch contacts', 500);
     }
 
-    if (!contacts) {
-      throw new APIError('No contacts found for this newsletter', 404);
+    if (!contacts || contacts.length === 0) {
+      throw new APIError('No pending contacts found for this newsletter', 404);
     }
 
     // Filter out inactive contacts and format for sending
     const emailContacts: EmailContact[] = contacts
-      .filter(c => c.contacts?.status === 'active')
+      .filter(c => c.contact?.status === 'active')
       .map(c => ({
-        email: c.contacts.email,
-        name: c.contacts.name || undefined
+        email: c.contact.email,
+        name: c.contact.name || undefined
       }));
 
     if (emailContacts.length === 0) {
@@ -120,16 +128,19 @@ export async function POST(req: Request) {
     const result = await sendBulkEmails(
       emailContacts,
       newsletter.subject,
-      newsletter.newsletter_sections.map(section => `
-        <h2>${section.title}</h2>
-        ${section.content}
-        ${section.image_url ? `<img src="${section.image_url}" alt="${section.title}">` : ''}
-      `).join('\n')
+      newsletter.newsletter_sections
+        .filter(section => section.status === 'active')
+        .sort((a, b) => a.section_number - b.section_number)
+        .map(section => `
+          <h2>${section.title}</h2>
+          ${section.content}
+          ${section.image_url ? `<img src="${section.image_url}" alt="${section.title}">` : ''}
+        `).join('\n')
     );
 
     // Update newsletter status based on results
-    const updates: Partial<Newsletter> = {
-      status: result.failed.length === 0 ? 'sent' : 'failed',
+    const updates = {
+      status: result.failed.length === 0 ? 'sent' : 'failed' as NewsletterStatus,
       sent_count: result.successful.length,
       failed_count: result.failed.length,
       last_sent_status: result.failed.length === 0 
@@ -147,22 +158,20 @@ export async function POST(req: Request) {
       throw new APIError('Failed to update newsletter status', 500);
     }
 
-    // Update newsletter_contacts status
-    const contactUpdates = contacts.map(contact => {
-      const successfulIndex = result.successful.findIndex(s => s.email === contact.contacts.email);
-      const failedIndex = result.failed.findIndex(f => f.email === contact.contacts.email);
-
-      return {
-        id: contact.id,
-        status: successfulIndex !== -1 ? 'sent' as const
-          : failedIndex !== -1 ? 'failed' as const
-          : 'pending' as const,
-        sent_at: successfulIndex !== -1 ? new Date().toISOString() : null,
-        error_message: failedIndex !== -1 ? result.failed[failedIndex].error : null
-      };
-    });
-
     // Update contact statuses
+    const contactUpdates = contacts.map(contact => ({
+      id: contact.id,
+      status: result.successful.find(s => s.email === contact.contact.email)
+        ? 'sent' as NewsletterContactStatus
+        : result.failed.find(f => f.email === contact.contact.email)
+        ? 'failed' as NewsletterContactStatus
+        : 'pending' as NewsletterContactStatus,
+      sent_at: result.successful.find(s => s.email === contact.contact.email)
+        ? new Date().toISOString()
+        : null,
+      error_message: result.failed.find(f => f.email === contact.contact.email)?.error || null
+    }));
+
     const { error: contactUpdateError } = await supabaseAdmin
       .from('newsletter_contacts')
       .upsert(contactUpdates);
@@ -172,20 +181,26 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json({
-      success: true,
       message: 'Newsletter sent successfully',
-      data: {
-        sent: result.successful.length,
+      result: {
+        successful: result.successful.length,
         failed: result.failed.length
       }
     });
-
   } catch (error) {
+    // If there's an error, update newsletter status to failed
+    await supabaseAdmin
+      .from('newsletters')
+      .update({
+        status: 'failed' as NewsletterStatus,
+        last_sent_status: error instanceof APIError ? error.message : 'Failed to send newsletter'
+      })
+      .eq('id', newsletterId);
+
     console.error('Error sending newsletter:', error);
     return NextResponse.json(
       {
-        success: false,
-        message: error instanceof Error ? error.message : 'Internal server error'
+        error: error instanceof APIError ? error.message : 'Failed to send newsletter'
       },
       { status: error instanceof APIError ? error.status : 500 }
     );

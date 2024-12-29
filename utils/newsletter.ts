@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import { Database } from '@/types/supabase';
+import { NewsletterWithCompany, NewsletterSection, Section } from '@/types/email';
 import { getSupabaseAdmin } from './supabase-admin';
 import { APIError } from './errors';
 
@@ -11,43 +11,6 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
-type Newsletter = Database['public']['Tables']['newsletters']['Row'];
-type Company = Database['public']['Tables']['companies']['Row'];
-
-// Define the shape of the joined data from Supabase
-interface NewsletterWithCompany {
-  id: string;
-  company_id: string;
-  subject: string;
-  draft_status: string | null;
-  draft_recipient_email: string | null;
-  draft_sent_at: string | null;
-  status: string | null;
-  sent_at: string | null;
-  sent_count: number | null;
-  failed_count: number | null;
-  last_sent_status: string | null;
-  created_at: string | null;
-  updated_at: string | null;
-  companies: Company;
-}
-
-export interface NewsletterSection {
-  id?: string;
-  newsletter_id?: string;
-  section_number: number;
-  title: string;
-  content: string;
-  image_prompt?: string;
-  image_url?: string;
-  status: 'active' | 'deleted';
-  created_at?: string;
-  updated_at?: string;
-}
-
-// Add delay utility function
-const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
 interface GenerateOptions {
   companyName: string;
   industry: string;
@@ -55,20 +18,11 @@ interface GenerateOptions {
   audienceDescription?: string;
 }
 
-interface Section {
-  title: string;
-  content: string;
-  image_prompt?: string;
-  image_url?: string;
-  status: 'active' | 'deleted';
-  section_number: number;
-}
-
 export async function generateNewsletter(
   newsletterId: string,
   customPrompt?: string,
   options?: GenerateOptions
-): Promise<Section[]> {
+): Promise<NewsletterSection[]> {
   const supabaseAdmin = getSupabaseAdmin();
   
   try {
@@ -78,7 +32,7 @@ export async function generateNewsletter(
         .from('newsletters')
         .select(`
           *,
-          companies (
+          company:companies (
             company_name,
             industry,
             target_audience,
@@ -94,10 +48,10 @@ export async function generateNewsletter(
       }
 
       options = {
-        companyName: newsletter.companies.company_name,
-        industry: newsletter.companies.industry,
-        targetAudience: newsletter.companies.target_audience || undefined,
-        audienceDescription: newsletter.companies.audience_description || undefined
+        companyName: newsletter.company.company_name,
+        industry: newsletter.company.industry,
+        targetAudience: newsletter.company.target_audience || undefined,
+        audienceDescription: newsletter.company.audience_description || undefined
       };
     }
 
@@ -108,7 +62,7 @@ export async function generateNewsletter(
       "Share success stories or case studies"
     ];
 
-    const sections: Section[] = [];
+    const sections: NewsletterSection[] = [];
 
     for (let i = 0; i < sectionPrompts.length; i++) {
       const prompt = sectionPrompts[i];
@@ -135,15 +89,16 @@ export async function generateNewsletter(
       const content = lines.slice(1).join('\n').trim();
 
       sections.push({
+        newsletter_id: newsletterId,
+        section_number: i + 1,
         title,
         content,
         image_prompt: `Create an image for a newsletter section titled "${title}" about ${options.industry}`,
         status: 'active',
-        section_number: i + 1
       });
 
       // Add delay between API calls
-      await delay(1000);
+      await new Promise(resolve => setTimeout(resolve, 1000));
     }
 
     return sections;

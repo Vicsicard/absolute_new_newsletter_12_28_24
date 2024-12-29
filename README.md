@@ -1,65 +1,56 @@
-# Newsletter Generator
+# Newsletter App
 
-This project is a newsletter generation system utilizing Supabase as the backend and Next.js for the frontend. It includes features such as AI-generated content and email distribution.
-
-## Current Status
-- The project is currently functional with the ability to create newsletters and send them via email.
-- The email sending functionality has been validated and is now working correctly.
-- Ensure that the sender email is verified in Brevo to avoid errors.
-
-## Setup Instructions
-1. Clone the repository.
-2. Install dependencies using `npm install`.
-3. Set up environment variables in `.env.local`.
-4. Run the development server using `npm run dev`.
+## Overview
+This project is a newsletter generation system that utilizes Supabase as the backend and Next.js for the frontend. The application allows users to create, manage, and send newsletters efficiently.
 
 ## Features
-- AI-generated newsletter content.
-- Email distribution through Brevo.
-- User-friendly interface for newsletter creation.
+- **Onboarding**: Add new companies and contacts through a user-friendly interface.
+- **Email Sending**: Integrate with Brevo for sending newsletters, with improved error handling and response formatting.
+- **Newsletter Generation**: Generate engaging newsletter content using OpenAI's GPT-4.
+- **Dynamic Sections**: Create sections dynamically based on user input and predefined templates.
 
-## Future Improvements
-- Add support for images in newsletters.
-- Enhance error handling and validation.
+## Recent Changes
+- Updated the email types to match the database schema:
+  - Removed 'sending' from `NewsletterStatus`
+  - Removed 'inactive' from `ContactStatus`
+  - Ensured all status types match the database schema
+- Updated the newsletter utility to ensure:
+  - The query retrieves company data correctly using an inner join.
+  - The `NewsletterWithCompany` interface accurately reflects the joined data structure.
+  - The generated sections now include a `status` field and a `section_number`.
 
-## Known Issues
-- Ensure that all required fields are filled out in the form to avoid submission errors.
+## Installation
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/Vicsicard/absolute_new_newsletter_12_28_24.git
+   cd absolute_new_newsletter_12_28_24
+   ```
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+3. Set up environment variables in a `.env.local` file:
+   ```bash
+   OPENAI_API_KEY=your_openai_api_key
+   SUPABASE_URL=your_supabase_url
+   SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+   BREVO_API_KEY=your_brevo_api_key
+   ```
 
-## Technology Stack
+## Usage
+1. Run the development server:
+   ```bash
+   npm run dev
+   ```
+2. Access the application at `http://localhost:3000`.
 
-- **Frontend**: Next.js 14, TypeScript, Tailwind CSS
-- **Backend**: Next.js API Routes
-- **Database**: Supabase
-- **AI**: OpenAI (GPT-4 & DALL-E 3)
-- **Email**: Brevo (formerly Sendinblue)
-
-## Project Structure
-
-```
-newsletter-app/
-├── app/                    # Next.js app directory
-│   ├── api/               # API routes
-│   └── components/        # React components
-├── utils/                 # Utility functions
-├── types/                 # TypeScript types
-└── docs/                  # Documentation
-```
+## Next Steps
+- Monitor application performance and user feedback after deployment.
+- Continue refining features based on testing and user requirements.
+- Ensure all components align with the Supabase database schema as outlined in `DATABASE_INDEXES.md`.
 
 ## Contributing
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+Contributions are welcome! Please open an issue or submit a pull request.
 
 ## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Acknowledgments
-
-- OpenAI for GPT-4 and DALL-E 3
-- Brevo for email services
-- Supabase for database services
-- Next.js team for the amazing framework
+This project is licensed under the MIT License.

@@ -42,10 +42,10 @@ CREATE TABLE newsletters (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     company_id UUID REFERENCES companies(id),
     subject TEXT NOT NULL,
-    draft_status TEXT DEFAULT 'pending' CHECK (draft_status IN ('pending', 'draft', 'draft_sent', 'pending_contacts', 'ready_to_send', 'sending', 'sent', 'failed')),
+    draft_status TEXT DEFAULT 'pending' CHECK (draft_status IN ('pending', 'sent', 'failed')),
     draft_recipient_email TEXT,
     draft_sent_at TIMESTAMPTZ,
-    status TEXT DEFAULT 'draft',
+    status TEXT DEFAULT 'draft' CHECK (status IN ('draft', 'draft_sent', 'pending_contacts', 'ready_to_send', 'sending', 'sent', 'failed')),
     sent_at TIMESTAMPTZ,
     sent_count INTEGER DEFAULT 0,
     failed_count INTEGER DEFAULT 0,
@@ -57,6 +57,7 @@ CREATE TABLE newsletters (
 CREATE INDEX idx_newsletters_draft_status ON newsletters(draft_status);
 CREATE INDEX idx_newsletters_draft_recipient ON newsletters(draft_recipient_email);
 CREATE INDEX idx_newsletters_company_id ON newsletters(company_id);
+CREATE INDEX idx_newsletters_status ON newsletters(status);
 
 -- Newsletter Sections table
 CREATE TABLE newsletter_sections (
@@ -67,7 +68,7 @@ CREATE TABLE newsletter_sections (
     content TEXT NOT NULL,
     image_prompt TEXT,
     image_url TEXT,
-    status TEXT DEFAULT 'active',
+    status TEXT DEFAULT 'active' CHECK (status IN ('active', 'deleted')),
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE(newsletter_id, section_number)
@@ -81,7 +82,7 @@ CREATE TABLE contacts (
     company_id UUID REFERENCES companies(id),
     email TEXT NOT NULL,
     name TEXT,
-    status TEXT DEFAULT 'active',
+    status TEXT DEFAULT 'active' CHECK (status IN ('active', 'deleted')),
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE(company_id, email)
@@ -95,7 +96,7 @@ CREATE TABLE newsletter_contacts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     newsletter_id UUID REFERENCES newsletters(id),
     contact_id UUID REFERENCES contacts(id),
-    status TEXT DEFAULT 'pending',
+    status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'sent', 'failed')),
     sent_at TIMESTAMPTZ,
     error_message TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -112,7 +113,7 @@ CREATE TABLE csv_uploads (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     company_id UUID REFERENCES companies(id),
     filename TEXT NOT NULL,
-    status TEXT DEFAULT 'pending',
+    status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'completed', 'failed')),
     error_message TEXT,
     processed_rows INTEGER DEFAULT 0,
     total_rows INTEGER DEFAULT 0,

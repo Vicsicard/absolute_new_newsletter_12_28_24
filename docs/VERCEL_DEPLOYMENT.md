@@ -25,22 +25,102 @@ BREVO_SENDER_EMAIL=
 BREVO_SENDER_NAME=
 ```
 
+Note: Ensure all environment variables are properly set in the Vercel dashboard under Project Settings > Environment Variables.
+
 ## Build Configuration
+
+### Node.js Version
+- Required: Node.js 18.18 or later
+- Set in package.json:
+  ```json
+  {
+    "engines": {
+      "node": ">=18.0.0"
+    }
+  }
+  ```
+
+### Build Settings
+- Output: Server-side rendering (SSR)
+- Framework Preset: Next.js
+- Build Command: `next build`
+- Install Command: `npm install`
+- Output Directory: `.next`
 
 ## API Routes & Serverless Functions
 
+Our application uses the following API routes:
+
+1. `/api/newsletter/send` - Handles newsletter sending
+   - Method: POST
+   - Runtime: Node.js
+   - Memory: 1024 MB
+   - Timeout: 60s
+
+2. `/api/onboarding` - Handles company onboarding
+   - Method: POST
+   - Runtime: Node.js
+   - Memory: 1024 MB
+   - Timeout: 60s
+
 ## Database Connections
+
+### Supabase Configuration
+- Connection pooling is enabled
+- Edge functions are configured to run in regions close to the database
+- Proper connection string format:
+  ```
+  postgresql://[user]:[password]@[host]:[port]/[database]
+  ```
+
+### Connection Management
+- Using connection pooling for optimal performance
+- Implementing proper error handling and retries
+- Monitoring connection limits and usage
 
 ## Performance Optimization
 
+1. **Image Optimization**
+   - Using next/image for automatic optimization
+   - Implementing proper caching headers
+   - Using appropriate image formats (WebP, AVIF)
+
+2. **API Route Optimization**
+   - Implementing proper caching strategies
+   - Using edge functions where appropriate
+   - Optimizing database queries
+
+3. **Build Optimization**
+   - Minimizing bundle size
+   - Implementing code splitting
+   - Using dynamic imports for large dependencies
+
 ## Troubleshooting
+
+Common issues and solutions:
+
+1. **Build Failures**
+   - Check Node.js version compatibility
+   - Verify all dependencies are installed
+   - Check for TypeScript errors
+
+2. **Runtime Errors**
+   - Verify environment variables are set
+   - Check API route timeouts
+   - Monitor database connection issues
+
+3. **Performance Issues**
+   - Monitor Edge Function performance
+   - Check database query performance
+   - Verify image optimization settings
+
+For additional support, refer to:
+- [Vercel Documentation](https://vercel.com/docs)
+- [Next.js Documentation](https://nextjs.org/docs)
+- [Supabase Documentation](https://supabase.io/docs)
 
 ---
 *This document will be updated with Vercel deployment documentation and best practices.*
-
-
-
-
 
 When it comes to deploying a Next.js application, there are several important configuration requirements and considerations to keep in mind. Here are the key deployment configuration requirements for Next.js:
 Node.js Version: Next.js requires Node.js 18.18 or later 1 .
