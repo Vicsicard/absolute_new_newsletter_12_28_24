@@ -23,6 +23,8 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=
 BREVO_API_KEY=
 BREVO_SENDER_EMAIL=
 BREVO_SENDER_NAME=
+BASE_URL=https://newsletter-lvs56aih1-vicsicards-projects.vercel.app
+NODE_ENV=production
 ```
 
 Note: Ensure all environment variables are properly set in the Vercel dashboard under Project Settings > Environment Variables.

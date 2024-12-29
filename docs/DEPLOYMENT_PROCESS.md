@@ -53,7 +53,7 @@
       "isPublic": false,
       "required": true,
       "development": "http://localhost:3000",
-      "production": "https://{PROJECT_NAME}.vercel.app"
+      "production": "https://newsletter-lvs56aih1-vicsicards-projects.vercel.app"
     }
   ],
   "setupSteps": [
@@ -223,7 +223,7 @@ vercel logs <deployment-url>
    BREVO_API_KEY=your_brevo_api_key
    BREVO_SENDER_EMAIL=your_sender_email
    BREVO_SENDER_NAME=your_sender_name
-   BASE_URL=your_base_url
+   BASE_URL=https://newsletter-lvs56aih1-vicsicards-projects.vercel.app
    ```
 
 3. Run type checking:

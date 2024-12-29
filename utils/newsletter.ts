@@ -2,6 +2,7 @@ import OpenAI from 'openai';
 import { NewsletterWithCompany, NewsletterSection, NewsletterSectionStatus } from '@/types/email';
 import { getSupabaseAdmin } from './supabase-admin';
 import { APIError } from './errors';
+import { generateImage } from './image';
 
 if (!process.env.OPENAI_API_KEY) {
   throw new Error('Missing OPENAI_API_KEY environment variable');
@@ -90,13 +91,17 @@ export async function generateNewsletter(
       const title = lines[0].replace(/^#*\s*/, ''); // Remove any markdown heading symbols
       const content = lines.slice(1).join('\n').trim();
 
+      // Generate image for this section
+      const imagePrompt = `Create a modern, professional abstract image representing ${options.industry} concepts. The image should be minimalist and symbolic, focusing on geometric shapes, gradients, or abstract patterns. Do not include any text, letters, numbers, or human figures. Use a professional color palette suitable for ${options.industry}. The image should convey the concept of ${title} through abstract visual elements only, such as flowing lines, interconnected shapes, or dynamic compositions. Make it suitable for a business newsletter background.`;
+      const imageUrl = await generateImage(imagePrompt);
+
       sections.push({
         newsletter_id: newsletterId,
         section_number: i + 1,
         title,
         content,
-        image_prompt: `Create an image for a newsletter section titled "${title}" about ${options.industry}`,
-        image_url: null,
+        image_prompt: imagePrompt,
+        image_url: imageUrl,
         status: 'active' as NewsletterSectionStatus,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()

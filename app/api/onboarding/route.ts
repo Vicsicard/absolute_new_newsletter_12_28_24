@@ -11,7 +11,8 @@ import type {
   NewsletterStatus,
   ContactStatus,
   NewsletterContactStatus,
-  DraftStatus
+  DraftStatus,
+  NewsletterSectionStatus
 } from '@/types/email';
 
 // Configure API route
@@ -23,28 +24,45 @@ export async function POST(req: NextRequest) {
   const supabaseAdmin = getSupabaseAdmin();
   
   try {
-    // Get form data
-    const formData = await req.formData();
+    let companyData: Partial<Company>;
+    let contactsData: any;
+    let jsonData: any;
+
+    // Try to parse as JSON first, fallback to FormData
+    try {
+      jsonData = await req.json();
+      companyData = {
+        company_name: jsonData.company_name,
+        industry: jsonData.industry,
+        contact_email: jsonData.contact_email,
+        target_audience: jsonData.target_audience || null,
+        audience_description: jsonData.audience_description || null,
+        website_url: jsonData.website_url || null,
+        phone_number: jsonData.phone_number || null
+      };
+      contactsData = jsonData.contacts;
+    } catch {
+      // If JSON parsing fails, try FormData
+      const formData = await req.formData();
+      companyData = {
+        company_name: formData.get('company_name') as string,
+        industry: formData.get('industry') as string,
+        contact_email: formData.get('contact_email') as string,
+        target_audience: formData.get('target_audience') as string || null,
+        audience_description: formData.get('audience_description') as string || null,
+        website_url: formData.get('website_url') as string || null,
+        phone_number: formData.get('phone_number') as string || null
+      };
+      contactsData = formData.get('contacts');
+    }
 
     // Validate required fields
     const requiredFields = ['company_name', 'industry', 'contact_email'];
     for (const field of requiredFields) {
-      const value = formData.get(field);
-      if (!value) {
+      if (!companyData[field as keyof typeof companyData]) {
         throw new APIError(`Missing required field: ${field}`, 400);
       }
     }
-
-    // Extract company data from FormData
-    const companyData: Partial<Company> = {
-      company_name: formData.get('company_name') as string,
-      industry: formData.get('industry') as string,
-      contact_email: formData.get('contact_email') as string,
-      target_audience: formData.get('target_audience') as string || null,
-      audience_description: formData.get('audience_description') as string || null,
-      website_url: formData.get('website_url') as string || null,
-      phone_number: formData.get('phone_number') as string || null
-    };
 
     // Create company
     const { data: company, error: companyError } = await supabaseAdmin
@@ -58,11 +76,10 @@ export async function POST(req: NextRequest) {
     }
 
     // Parse and validate contacts
-    const contactsData = formData.get('contacts');
     let contacts: Array<Partial<Contact>> = [];
     if (contactsData) {
       try {
-        const parsedContacts = JSON.parse(contactsData as string);
+        const parsedContacts = typeof contactsData === 'string' ? JSON.parse(contactsData) : contactsData;
         if (Array.isArray(parsedContacts)) {
           contacts = parsedContacts.map(contact => ({
             company_id: company.id,
@@ -96,9 +113,9 @@ export async function POST(req: NextRequest) {
     // Create initial newsletter with draft status
     const newsletterData: Partial<Newsletter> = {
       company_id: company.id,
-      subject: `${company.company_name} Newsletter`,
+      subject: jsonData?.subject || `${company.company_name} Newsletter`,
       draft_status: 'pending' as DraftStatus,
-      draft_recipient_email: company.contact_email,
+      draft_recipient_email: jsonData?.draft_recipient_email || company.contact_email,
       status: 'draft' as NewsletterStatus,
       sent_count: 0,
       failed_count: 0,
@@ -115,6 +132,23 @@ export async function POST(req: NextRequest) {
 
     if (newsletterError || !newsletter) {
       throw new APIError('Failed to create newsletter', 500);
+    }
+
+    // Create initial newsletter section
+    const sectionData = {
+      newsletter_id: newsletter.id,
+      section_number: 1,
+      title: 'Welcome to Our Newsletter',
+      content: `Welcome to ${company.company_name}'s newsletter! We're excited to share our latest updates and insights with you.`,
+      status: 'active' as NewsletterSectionStatus
+    };
+
+    const { error: sectionError } = await supabaseAdmin
+      .from('newsletter_sections')
+      .insert(sectionData);
+
+    if (sectionError) {
+      throw new APIError('Failed to create initial newsletter section', 500);
     }
 
     // Create newsletter contacts entries
