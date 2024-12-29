@@ -1,15 +1,13 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/utils/supabase-admin';
-import { sendBulkEmail } from '@/utils/email';
-import type { Database } from '@/types/database';
-import { 
-  EmailContact, 
-  NewsletterStatus, 
+import { sendBulkEmails, validateEmail } from '@/utils/email';
+import { generateEmailHTML } from '@/utils/email-template';
+import type { 
+  Newsletter, 
+  NewsletterWithJoins,
+  NewsletterSectionStatus,
   DraftStatus,
-  NewsletterWithRelations,
-  Newsletter,
-  Company,
-  NewsletterSection
+  NewsletterStatus 
 } from '@/types/email';
 import { APIError } from '@/utils/errors';
 
@@ -21,39 +19,22 @@ if (!process.env.BREVO_API_KEY || !process.env.BREVO_SENDER_EMAIL || !process.en
 export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
 
-type NewsletterWithJoins = Newsletter & {
-  company: Pick<Company, 'company_name' | 'industry' | 'target_audience' | 'audience_description' | 'contact_email'>;
-  newsletter_sections: NewsletterSection[];
-};
-
 export async function POST(request: Request) {
   const supabaseAdmin = getSupabaseAdmin();
-
+  
   try {
     const { newsletterId } = await request.json();
 
     if (!newsletterId) {
-      throw new APIError('Missing newsletterId', 400);
+      throw new APIError('Newsletter ID is required', 400);
     }
 
-    // Get newsletter with sections and company info
-    const { data: newsletter, error: newsletterError } = await supabaseAdmin
+    console.log('Fetching newsletter data for ID:', newsletterId);
+    const { data: newsletter, error } = await supabaseAdmin
       .from('newsletters')
       .select(`
-        id,
-        company_id,
-        subject,
-        draft_status,
-        draft_recipient_email,
-        draft_sent_at,
-        status,
-        sent_at,
-        sent_count,
-        failed_count,
-        last_sent_status,
-        created_at,
-        updated_at,
-        company:companies!inner (
+        *,
+        company:companies (
           company_name,
           industry,
           target_audience,
@@ -74,89 +55,94 @@ export async function POST(request: Request) {
         )
       `)
       .eq('id', newsletterId)
-      .eq('draft_status', 'pending')
-      .eq('status', 'draft')
-      .order('section_number', { foreignTable: 'newsletter_sections' })
-      .single() as unknown as { data: NewsletterWithJoins | null; error: any };
+      .eq('newsletter_sections.status', 'active' as NewsletterSectionStatus)
+      .single();
 
-    if (newsletterError || !newsletter) {
-      console.error('Newsletter error:', newsletterError);
-      throw new APIError('Failed to fetch newsletter or newsletter not in pending draft status', 500);
+    if (error) {
+      console.error('Error fetching newsletter:', error);
+      throw new APIError('Failed to fetch newsletter data', 500);
+    }
+
+    if (!newsletter) {
+      throw new APIError('Newsletter not found', 404);
     }
 
     if (!newsletter.draft_recipient_email) {
-      throw new APIError('No draft recipient email found', 400);
+      throw new APIError('Draft recipient email is required', 400);
     }
 
-    // Transform the response to match NewsletterWithRelations type
-    const typedNewsletter: NewsletterWithRelations = {
-      id: newsletter.id,
-      company_id: newsletter.company_id,
-      subject: newsletter.subject,
-      draft_status: newsletter.draft_status,
-      draft_recipient_email: newsletter.draft_recipient_email,
-      draft_sent_at: newsletter.draft_sent_at,
-      status: newsletter.status,
-      sent_at: newsletter.sent_at,
-      sent_count: newsletter.sent_count,
-      failed_count: newsletter.failed_count,
-      last_sent_status: newsletter.last_sent_status,
-      created_at: newsletter.created_at,
-      updated_at: newsletter.updated_at,
-      company: {
-        company_name: newsletter.company.company_name,
-        industry: newsletter.company.industry,
-        target_audience: newsletter.company.target_audience,
-        audience_description: newsletter.company.audience_description,
-        contact_email: newsletter.company.contact_email
-      },
-      newsletter_sections: newsletter.newsletter_sections.map(section => ({
-        newsletter_id: section.newsletter_id,
-        section_number: section.section_number,
+    // Validate email format
+    if (!validateEmail(newsletter.draft_recipient_email)) {
+      throw new APIError(`Invalid draft recipient email format: ${newsletter.draft_recipient_email}`, 400);
+    }
+
+    // Transform the response to match NewsletterWithJoins type
+    const typedNewsletter: NewsletterWithJoins = {
+      ...newsletter,
+      company: newsletter.company,
+      newsletter_sections: newsletter.newsletter_sections.sort((a: { section_number: number }, b: { section_number: number }) => a.section_number - b.section_number)
+    };
+
+    console.log('Generating newsletter HTML...');
+    const htmlContent = generateEmailHTML({
+      subject: typedNewsletter.subject,
+      sections: typedNewsletter.newsletter_sections.map(section => ({
         title: section.title,
         content: section.content,
-        image_prompt: section.image_prompt,
-        image_url: section.image_url,
-        status: section.status,
-        created_at: null,
-        updated_at: null
+        imageUrl: section.image_url || undefined
       }))
+    });
+
+    // Send draft to test recipient
+    console.log('Sending draft to:', typedNewsletter.draft_recipient_email);
+    const result = await sendBulkEmails(
+      [{
+        email: typedNewsletter.draft_recipient_email!, // We've already checked it's not null above
+        name: null // Match database schema where name is optional
+      }],
+      typedNewsletter.subject,
+      htmlContent
+    );
+
+    console.log('Email sending result:', result);
+
+    // Update newsletter status based on send result
+    const hasErrors = result.failed.length > 0;
+    const updateData: Pick<Newsletter, 'draft_status' | 'draft_sent_at' | 'last_sent_status' | 'status'> = {
+      draft_status: hasErrors ? 'failed' : 'sent' as DraftStatus,
+      draft_sent_at: hasErrors ? null : new Date().toISOString(),
+      last_sent_status: hasErrors ? 'error' : 'success',
+      status: hasErrors ? 'draft' : 'draft_sent' as NewsletterStatus
     };
 
-    // Send draft to recipient
-    const contact: EmailContact = {
-      email: typedNewsletter.draft_recipient_email,
-      name: null
-    };
-
-    const { success, error } = await sendBulkEmail(typedNewsletter, [contact]);
-
-    if (!success) {
-      throw new APIError(error?.message || 'Failed to send draft newsletter', 500);
-    }
-
-    // Update newsletter status
+    console.log('Updating newsletter status:', updateData);
     const { error: updateError } = await supabaseAdmin
       .from('newsletters')
-      .update({
-        draft_status: 'sent' as DraftStatus,
-        draft_sent_at: new Date().toISOString(),
-        last_sent_status: success ? 'success' : 'failed'
-      })
+      .update(updateData)
       .eq('id', newsletterId);
 
     if (updateError) {
-      console.error('Update error:', updateError);
+      console.error('Error updating newsletter status:', updateError);
       throw new APIError('Failed to update newsletter status', 500);
     }
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({
+      success: true,
+      message: 'Draft sent successfully',
+      data: result
+    });
 
   } catch (error) {
-    console.error('Error sending draft newsletter:', error);
+    console.error('Error sending draft:', error);
     if (error instanceof APIError) {
-      return NextResponse.json({ success: false, error: error.message }, { status: error.status });
+      return NextResponse.json({
+        success: false,
+        message: error.message
+      }, { status: error.statusCode });
     }
-    return NextResponse.json({ success: false, error: 'Internal server error' }, { status: 500 });
+    return NextResponse.json({
+      success: false,
+      message: 'Internal server error'
+    }, { status: 500 });
   }
 }

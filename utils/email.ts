@@ -1,6 +1,30 @@
-import { EmailContact, BulkEmailResult, NewsletterStatus, NewsletterContactStatus } from '@/types/email';
-import { getSupabaseAdmin } from './supabase-admin';
-import { APIError } from './errors';
+import { Database } from '@/types/database';
+
+type Contact = Database['public']['Tables']['contacts']['Row'];
+type Newsletter = Database['public']['Tables']['newsletters']['Row'];
+type NewsletterContact = Database['public']['Tables']['newsletter_contacts']['Row'];
+
+interface BrevoEmailResponse {
+  messageId: string;
+}
+
+interface BrevoError {
+  code: string;
+  message: string;
+}
+
+export interface BulkEmailResult {
+  successful: Array<{
+    email: string;
+    messageId: string;
+    sent_at: string;
+  }>;
+  failed: Array<{
+    email: string;
+    error: string;
+    error_message: string;
+  }>;
+}
 
 if (!process.env.BREVO_API_KEY || !process.env.BREVO_SENDER_EMAIL || !process.env.BREVO_SENDER_NAME) {
   throw new Error('Missing required Brevo environment variables');
@@ -13,24 +37,56 @@ const SENDER = {
   name: process.env.BREVO_SENDER_NAME
 };
 
-interface BrevoEmailResponse {
-  messageId: string;
-}
-
-interface BrevoError {
-  code: string;
-  message: string;
-}
-
 /**
  * Send a single email using Brevo API
  */
 export async function sendEmail(
-  to: EmailContact,
+  to: Pick<Contact, 'email' | 'name'>,
   subject: string,
   htmlContent: string
 ): Promise<string> {
   try {
+    // Validate email format
+    if (!validateEmail(to.email)) {
+      console.error('Invalid email format:', to.email);
+      throw new Error(`Invalid email format: ${to.email}`);
+    }
+
+    console.log('Attempting to send email:', {
+      to: to.email,
+      subject,
+      sender: SENDER.email,
+      apiUrl: BREVO_API_URL,
+      hasApiKey: !!BREVO_API_KEY,
+      contentLength: htmlContent.length
+    });
+
+    // Validate Brevo configuration
+    if (!BREVO_API_KEY || !SENDER.email || !SENDER.name) {
+      console.error('Missing Brevo configuration:', {
+        hasApiKey: !!BREVO_API_KEY,
+        hasSenderEmail: !!SENDER.email,
+        hasSenderName: !!SENDER.name
+      });
+      throw new Error('Invalid Brevo configuration');
+    }
+
+    const emailData = {
+      sender: SENDER,
+      to: [{
+        email: to.email,
+        name: to.name || undefined // Use undefined to match database schema
+      }],
+      subject,
+      htmlContent,
+      textContent: htmlContent.replace(/<[^>]*>/g, '') // Strip HTML for text version
+    };
+
+    console.log('Sending email with data:', {
+      ...emailData,
+      htmlContent: `${emailData.htmlContent.substring(0, 100)}...` // Log just the start
+    });
+
     const response = await fetch(BREVO_API_URL, {
       method: 'POST',
       headers: {
@@ -38,26 +94,40 @@ export async function sendEmail(
         'api-key': BREVO_API_KEY,
         'content-type': 'application/json',
       },
-      body: JSON.stringify({
-        sender: SENDER,
-        to: [{
-          email: to.email,
-          name: to.name
-        }],
-        subject,
-        htmlContent,
-      }),
+      body: JSON.stringify(emailData),
     });
+
+    console.log('Brevo API response status:', response.status);
 
     if (!response.ok) {
       const error = await response.json() as BrevoError;
-      throw new Error(`Brevo API error: ${error.message}`);
+      console.error('Brevo API error response:', error);
+      throw new Error(`Brevo API error: ${error.message} (Code: ${error.code})`);
     }
 
-    const data = await response.json() as BrevoEmailResponse;
+    const responseText = await response.text();
+    console.log('Raw response:', responseText);
+
+    let data: BrevoEmailResponse;
+    try {
+      data = JSON.parse(responseText);
+    } catch (e) {
+      console.error('Failed to parse response JSON:', e);
+      throw new Error('Invalid response from Brevo API');
+    }
+
+    console.log('Email sent successfully:', {
+      messageId: data.messageId,
+      to: to.email,
+      subject
+    });
     return data.messageId;
   } catch (error) {
-    console.error('Error sending email:', error);
+    console.error('Error sending email:', {
+      error,
+      message: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined
+    });
     throw error;
   }
 }
@@ -67,7 +137,7 @@ export async function sendEmail(
  * Returns results for both successful and failed sends
  */
 export async function sendBulkEmails(
-  contacts: EmailContact[],
+  contacts: Pick<Contact, 'email' | 'name'>[],
   subject: string,
   htmlContent: string
 ): Promise<BulkEmailResult> {
@@ -76,31 +146,20 @@ export async function sendBulkEmails(
     failed: []
   };
 
-  // Send emails in parallel with rate limiting
-  const batchSize = 10;
-  for (let i = 0; i < contacts.length; i += batchSize) {
-    const batch = contacts.slice(i, i + batchSize);
-    const promises = batch.map(async (contact) => {
-      try {
-        const messageId = await sendEmail(contact, subject, htmlContent);
-        results.successful.push({ 
-          email: contact.email, 
-          messageId,
-          sent_at: new Date().toISOString()
-        });
-      } catch (error) {
-        results.failed.push({
-          email: contact.email,
-          error: error instanceof Error ? error.message : 'Unknown error',
-          error_message: error instanceof Error ? error.message : 'Unknown error'
-        });
-      }
-    });
-
-    await Promise.all(promises);
-    // Rate limiting: wait 1 second between batches
-    if (i + batchSize < contacts.length) {
-      await new Promise(resolve => setTimeout(resolve, 1000));
+  for (const contact of contacts) {
+    try {
+      const messageId = await sendEmail(contact, subject, htmlContent);
+      results.successful.push({
+        email: contact.email,
+        messageId,
+        sent_at: new Date().toISOString()
+      });
+    } catch (error) {
+      results.failed.push({
+        email: contact.email,
+        error: error instanceof Error ? error.name : 'UnknownError',
+        error_message: error instanceof Error ? error.message : 'Unknown error occurred'
+      });
     }
   }
 
@@ -114,7 +173,7 @@ export async function sendBulkEmails(
  */
 export async function sendNewsletter(
   newsletterId: string,
-  contacts: EmailContact[],
+  contacts: Pick<Contact, 'email' | 'name'>[],
   subject: string,
   htmlContent: string
 ): Promise<BulkEmailResult> {
@@ -125,7 +184,7 @@ export async function sendNewsletter(
     const { error: updateError } = await supabaseAdmin
       .from('newsletters')
       .update({ 
-        status: 'sending' as NewsletterStatus,
+        status: 'sending' as Newsletter['status'],
         last_sent_status: 'Sending in progress'
       })
       .eq('id', newsletterId);
@@ -139,7 +198,7 @@ export async function sendNewsletter(
 
     // Update newsletter status based on results
     const updates = {
-      status: results.failed.length === 0 ? 'sent' : 'failed' as NewsletterStatus,
+      status: results.failed.length === 0 ? 'sent' : 'failed' as Newsletter['status'],
       sent_count: results.successful.length,
       failed_count: results.failed.length,
       last_sent_status: results.failed.length === 0 
@@ -163,7 +222,7 @@ export async function sendNewsletter(
     await supabaseAdmin
       .from('newsletters')
       .update({
-        status: 'failed' as NewsletterStatus,
+        status: 'failed' as Newsletter['status'],
         last_sent_status: error instanceof Error ? error.message : 'Unknown error occurred'
       })
       .eq('id', newsletterId);
@@ -173,10 +232,10 @@ export async function sendNewsletter(
 }
 
 /**
- * Validate a single email address
+ * Validate email format
  */
 export function validateEmail(email: string): boolean {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
   return emailRegex.test(email);
 }
 

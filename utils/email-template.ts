@@ -1,21 +1,76 @@
 interface EmailTemplateProps {
-  content: string;
-  companyName?: string;
-  unsubscribeUrl?: string;
+  subject: string;
+  sections: Array<{
+    title: string;
+    content: string;
+    imageUrl?: string;
+  }>;
 }
 
 export function generateEmailHTML({
-  content,
-  companyName = '',
-  unsubscribeUrl = '#'
+  subject,
+  sections
 }: EmailTemplateProps): string {
-  return `
+  console.log('Generating email template for:', { subject, sectionsCount: sections.length });
+
+  const sectionsHtml = sections.map((section, index) => {
+    console.log(`Processing section ${index + 1}:`, {
+      title: section.title,
+      hasImage: !!section.imageUrl,
+      contentLength: section.content.length
+    });
+
+    return `
+      <section style="
+        margin-bottom: 30px;
+        background-color: #ffffff;
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      ">
+        <h2 style="
+          color: #1a56db;
+          margin-bottom: 15px;
+          font-size: 20px;
+          font-weight: 600;
+          line-height: 1.4;
+        ">
+          ${section.title}
+        </h2>
+        ${section.imageUrl ? `
+          <img src="${section.imageUrl}" 
+            alt="${section.title}" 
+            style="
+              max-width: 100%;
+              height: auto;
+              margin: 15px 0;
+              border-radius: 8px;
+              box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            "
+          />
+        ` : ''}
+        <div style="
+          color: #374151;
+          font-size: 16px;
+          line-height: 1.6;
+          margin-top: 15px;
+        ">
+          ${section.content.split('\n').map(paragraph => 
+            paragraph.trim() ? `<p style="margin: 0 0 15px 0;">${paragraph}</p>` : ''
+          ).join('')}
+        </div>
+      </section>
+    `;
+  }).join('');
+
+  const template = `
     <!DOCTYPE html>
     <html lang="en">
       <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>${companyName} Newsletter</title>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+        <title>${subject}</title>
       </head>
       <body style="
         margin: 0;
@@ -23,51 +78,60 @@ export function generateEmailHTML({
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
         line-height: 1.6;
         color: #333;
+        background-color: #f3f4f6;
       ">
+        <!-- Preheader Text (hidden) -->
+        <div style="display: none; max-height: 0px; overflow: hidden;">
+          ${subject}
+        </div>
+        
+        <!-- Main Container -->
         <div style="
           max-width: 600px;
           margin: 0 auto;
           padding: 20px;
         ">
-          ${companyName && `
-            <header style="
-              text-align: center;
-              margin-bottom: 30px;
-            ">
-              <h1 style="
-                color: #2563eb;
-                margin: 0;
-                font-size: 24px;
-              ">${companyName}</h1>
-            </header>
-          `}
-          
-          <main style="
-            background: white;
+          <!-- Header -->
+          <header style="
+            text-align: center;
+            margin-bottom: 30px;
             padding: 20px;
+            background-color: white;
             border-radius: 8px;
             box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
           ">
-            ${content}
-          </main>
-          
+            <h1 style="
+              color: #1a56db;
+              margin: 0;
+              font-size: 24px;
+              font-weight: 600;
+            ">
+              ${subject}
+            </h1>
+          </header>
+
+          <!-- Content -->
+          ${sectionsHtml}
+
+          <!-- Footer -->
           <footer style="
-            margin-top: 30px;
             text-align: center;
-            font-size: 12px;
-            color: #666;
+            margin-top: 30px;
+            padding: 20px;
+            color: #6b7280;
+            font-size: 14px;
           ">
-            <p>
-              To unsubscribe from our newsletters, 
-              <a href="${unsubscribeUrl}" 
-                style="color: #2563eb; text-decoration: none;"
-              >click here</a>
+            <p style="margin: 0;">
+              This email was sent by the newsletter system.
             </p>
           </footer>
         </div>
       </body>
     </html>
-  `
+  `;
+
+  console.log('Generated HTML length:', template.length);
+  return template;
 }
 
 export function generatePlainText(content: string): string {

@@ -135,7 +135,7 @@ export async function POST(req: Request) {
       .filter(c => c.contact?.status === 'active')
       .map(c => ({
         email: c.contact.email,
-        name: c.contact.name || undefined
+        name: c.contact.name || null
       }));
 
     if (emailContacts.length === 0) {

@@ -12,6 +12,8 @@ export type ContactStatus = 'active' | 'deleted';
 export type NewsletterContactStatus = 'pending' | 'sent' | 'failed';
 export type NewsletterSectionStatus = 'active' | 'deleted';
 export type ImageGenerationStatus = 'pending' | 'processing' | 'completed' | 'failed';
+export type CsvUploadStatus = 'pending' | 'processing' | 'completed' | 'failed';
+export type CompiledNewsletterStatus = 'draft' | 'ready' | 'sent' | 'error';
 
 export interface Database {
   public: {
@@ -88,7 +90,7 @@ export interface Database {
           id: string;
           company_id: string;
           filename: string;
-          status: 'pending' | 'processing' | 'completed' | 'failed';
+          status: CsvUploadStatus;
           error_message: string | null;
           processed_rows: number;
           total_rows: number;
@@ -99,7 +101,7 @@ export interface Database {
           id?: string;
           company_id: string;
           filename: string;
-          status?: 'pending' | 'processing' | 'completed' | 'failed';
+          status?: CsvUploadStatus;
           error_message?: string | null;
           processed_rows?: number;
           total_rows?: number;
@@ -110,7 +112,7 @@ export interface Database {
           id?: string;
           company_id?: string;
           filename?: string;
-          status?: 'pending' | 'processing' | 'completed' | 'failed';
+          status?: CsvUploadStatus;
           error_message?: string | null;
           processed_rows?: number;
           total_rows?: number;
