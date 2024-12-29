@@ -1,7 +1,33 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/utils/supabase-admin';
 import { APIError } from '@/utils/errors';
-import type { NewsletterContact } from '@/types/email';
+import type { Newsletter, NewsletterContact, Contact } from '@/types/email';
+
+interface NewsletterContactWithRelations extends NewsletterContact {
+  contacts: Contact;
+}
+
+interface NewsletterWithRelations extends Newsletter {
+  companies: {
+    company_name: string;
+    industry: string;
+    contact_email: string;
+    target_audience: string | null;
+    audience_description: string | null;
+  };
+  newsletter_sections: Array<{
+    id: string;
+    section_number: number;
+    title: string;
+    content: string;
+    image_prompt: string | null;
+    image_url: string | null;
+    status: string;
+    created_at: string;
+    updated_at: string;
+  }>;
+  newsletter_contacts: NewsletterContactWithRelations[];
+}
 
 // Configure API route
 export const runtime = 'edge';
@@ -47,7 +73,10 @@ export async function GET(
           status,
           sent_at,
           error_message,
+          created_at,
+          updated_at,
           contacts (
+            id,
             email,
             name,
             status
@@ -70,8 +99,8 @@ export async function GET(
     // Filter out inactive contacts and format response
     const formattedNewsletter = {
       ...newsletter,
-      newsletter_contacts: newsletter.newsletter_contacts?.filter(
-        (contact: NewsletterContact) => contact.contacts?.status === 'active'
+      newsletter_contacts: (newsletter as NewsletterWithRelations).newsletter_contacts?.filter(
+        contact => contact.contacts?.status === 'active'
       )
     };
 
