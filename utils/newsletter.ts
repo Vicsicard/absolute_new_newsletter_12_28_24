@@ -14,7 +14,21 @@ const openai = new OpenAI({
 type Newsletter = Database['public']['Tables']['newsletters']['Row'];
 type Company = Database['public']['Tables']['companies']['Row'];
 
-interface NewsletterWithCompany extends Newsletter {
+// Define the shape of the joined data from Supabase
+interface NewsletterWithCompany {
+  id: string;
+  company_id: string;
+  subject: string;
+  draft_status: string | null;
+  draft_recipient_email: string | null;
+  draft_sent_at: string | null;
+  status: string | null;
+  sent_at: string | null;
+  sent_count: number | null;
+  failed_count: number | null;
+  last_sent_status: string | null;
+  created_at: string | null;
+  updated_at: string | null;
   companies: Company;
 }
 
@@ -46,6 +60,8 @@ interface Section {
   content: string;
   image_prompt?: string;
   image_url?: string;
+  status: 'active' | 'deleted';
+  section_number: number;
 }
 
 export async function generateNewsletter(
@@ -60,7 +76,15 @@ export async function generateNewsletter(
       // Get company data from newsletter if options not provided
       const { data: newsletter, error: newsletterError } = await supabaseAdmin
         .from('newsletters')
-        .select('*, companies!inner(*)')
+        .select(`
+          *,
+          companies (
+            company_name,
+            industry,
+            target_audience,
+            audience_description
+          )
+        `)
         .eq('id', newsletterId)
         .returns<NewsletterWithCompany>()
         .single();
@@ -114,7 +138,7 @@ export async function generateNewsletter(
         title,
         content,
         image_prompt: `Create an image for a newsletter section titled "${title}" about ${options.industry}`,
-        status: 'active' as const,
+        status: 'active',
         section_number: i + 1
       });
 
