@@ -76,7 +76,13 @@ export async function POST(req: Request) {
     // Transform the response to match NewsletterWithRelations type
     const typedNewsletter: NewsletterWithRelations = {
       ...newsletter,
-      company: newsletter.company[0], // Get the first (and only) company from the array
+      company: {
+        company_name: newsletter.company[0].company_name,
+        industry: newsletter.company[0].industry,
+        target_audience: newsletter.company[0].target_audience,
+        audience_description: newsletter.company[0].audience_description,
+        contact_email: newsletter.company[0].contact_email
+      },
       newsletter_sections: newsletter.newsletter_sections || []
     };
 
