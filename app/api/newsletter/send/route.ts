@@ -50,14 +50,7 @@ export async function POST(req: Request) {
         last_sent_status,
         created_at,
         updated_at,
-        company:companies (
-          id,
-          company_name,
-          industry,
-          contact_email,
-          target_audience,
-          audience_description
-        ),
+        company:companies!inner (*),
         newsletter_sections (
           id,
           newsletter_id,
@@ -80,8 +73,12 @@ export async function POST(req: Request) {
       throw new APIError('Failed to fetch newsletter or newsletter not ready to send', 500);
     }
 
-    // Type assertion to ensure newsletter has the correct shape
-    const typedNewsletter = newsletter as NewsletterWithRelations;
+    // Transform the response to match NewsletterWithRelations type
+    const typedNewsletter: NewsletterWithRelations = {
+      ...newsletter,
+      company: newsletter.company[0], // Get the first (and only) company from the array
+      newsletter_sections: newsletter.newsletter_sections || []
+    };
 
     // Update to sending status
     const { error: sendingError } = await supabaseAdmin

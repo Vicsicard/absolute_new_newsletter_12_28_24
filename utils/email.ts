@@ -83,11 +83,16 @@ export async function sendBulkEmails(
     const promises = batch.map(async (contact) => {
       try {
         const messageId = await sendEmail(contact, subject, htmlContent);
-        results.successful.push({ email: contact.email, messageId });
+        results.successful.push({ 
+          email: contact.email, 
+          messageId,
+          sent_at: new Date().toISOString()
+        });
       } catch (error) {
         results.failed.push({
           email: contact.email,
-          error: error instanceof Error ? error.message : 'Unknown error'
+          error: error instanceof Error ? error.message : 'Unknown error',
+          error_message: error instanceof Error ? error.message : 'Unknown error'
         });
       }
     });

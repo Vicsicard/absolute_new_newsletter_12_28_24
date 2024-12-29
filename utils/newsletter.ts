@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import { NewsletterWithCompany, NewsletterSection } from '@/types/email';
+import { NewsletterWithCompany, NewsletterSection, NewsletterSectionStatus } from '@/types/email';
 import { getSupabaseAdmin } from './supabase-admin';
 import { APIError } from './errors';
 
@@ -96,7 +96,10 @@ export async function generateNewsletter(
         title,
         content,
         image_prompt: `Create an image for a newsletter section titled "${title}" about ${options.industry}`,
-        status: 'active',
+        image_url: null,
+        status: 'active' as NewsletterSectionStatus,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
       });
 
       // Add delay between API calls

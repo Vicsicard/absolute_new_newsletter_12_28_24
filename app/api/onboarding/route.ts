@@ -102,7 +102,9 @@ export async function POST(req: NextRequest) {
       status: 'draft' as NewsletterStatus,
       sent_count: 0,
       failed_count: 0,
-      last_sent_status: null
+      last_sent_status: null,
+      draft_sent_at: null,
+      sent_at: null
     };
 
     const { data: newsletter, error: newsletterError } = await supabaseAdmin
