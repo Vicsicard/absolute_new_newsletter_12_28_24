@@ -22,16 +22,12 @@ export type CsvUploadStatus = 'pending' | 'processing' | 'completed' | 'failed';
 
 // Relationship types
 export interface NewsletterWithCompany extends Newsletter {
-  company: Pick<Company, 'company_name' | 'industry' | 'target_audience' | 'audience_description'>;
+  company: Pick<Company, 'company_name' | 'industry' | 'target_audience' | 'audience_description' | 'contact_email'>;
 }
 
 export interface NewsletterWithRelations extends Newsletter {
-  company: Pick<Company, 'id' | 'company_name' | 'industry' | 'contact_email' | 'target_audience' | 'audience_description'>;
-  newsletter_sections: NewsletterSection[];
-}
-
-export interface NewsletterContactWithRelations extends NewsletterContact {
-  contact: Contact;
+  sections: NewsletterSection[];
+  contacts: (NewsletterContact & { contact: Contact })[];
 }
 
 // Email specific interfaces

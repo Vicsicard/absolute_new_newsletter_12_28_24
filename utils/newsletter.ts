@@ -47,11 +47,13 @@ export async function generateNewsletter(
         throw new APIError('Failed to fetch newsletter data', 500);
       }
 
+      const typedNewsletter = newsletter as NewsletterWithCompany;
+
       options = {
-        companyName: newsletter.company.company_name,
-        industry: newsletter.company.industry,
-        targetAudience: newsletter.company.target_audience || undefined,
-        audienceDescription: newsletter.company.audience_description || undefined
+        companyName: typedNewsletter.company.company_name,
+        industry: typedNewsletter.company.industry,
+        targetAudience: typedNewsletter.company.target_audience || undefined,
+        audienceDescription: typedNewsletter.company.audience_description || undefined
       };
     }
 
