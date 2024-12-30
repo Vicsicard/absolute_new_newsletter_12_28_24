@@ -18,7 +18,7 @@ interface GenerateOptions {
 
 // Section types and their prompts
 const SECTION_CONFIG = {
-  pain_point: {
+  welcome: {
     prompt: `Create a professional newsletter section that analyzes a critical industry pain point.
 Format:
 - Headline: Dynamic and engaging
@@ -28,7 +28,7 @@ Format:
 - The Takeaway: Strong summary with call to action`,
     sectionNumber: 1
   },
-  common_mistakes: {
+  industry_trends: {
     prompt: `Create a professional newsletter section about common industry mistakes.
 Format:
 - Headline: Dynamic and focused on industry mistakes
@@ -38,7 +38,7 @@ Format:
 - The Takeaway: Encouraging summary with call to action`,
     sectionNumber: 2
   },
-  company_solutions: {
+  practical_tips: {
     prompt: `Create a professional newsletter section showcasing company solutions.
 Format:
 - Headline: Dynamic and solution-focused
@@ -373,7 +373,7 @@ Guidelines:
         await updateQueueItemStatus(supabaseAdmin, newsletterId, sectionType, 'completed');
 
         // Add delay between sections to avoid rate limits
-        if (sectionType !== 'company_solutions') {
+        if (sectionType !== 'practical_tips') {
           console.log('Waiting before generating next section...');
           await new Promise(resolve => setTimeout(resolve, 2000));
         }
