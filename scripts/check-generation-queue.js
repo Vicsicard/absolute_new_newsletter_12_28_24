@@ -6,14 +6,15 @@ const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-async function checkNewsletterStatus() {
+async function checkGenerationQueue() {
   // Get the latest newsletter
   const { data: newsletter, error: newsletterError } = await supabase
     .from('newsletters')
     .select(`
       *,
       company:companies(*),
-      newsletter_sections(*)
+      newsletter_sections(*),
+      newsletter_generation_queue(*)
     `)
     .order('created_at', { ascending: false })
     .limit(1)
@@ -24,7 +25,9 @@ async function checkNewsletterStatus() {
     return;
   }
 
-  // Get all sections for this newsletter
+  console.log('Latest Newsletter:', JSON.stringify(newsletter, null, 2));
+
+  // Get all sections and queue items for this newsletter
   const { data: sections, error: sectionsError } = await supabase
     .from('newsletter_sections')
     .select('*')
@@ -35,22 +38,18 @@ async function checkNewsletterStatus() {
     console.error('Error fetching sections:', sectionsError);
   }
 
-  // Check generation queue
   const { data: queueItems, error: queueError } = await supabase
     .from('newsletter_generation_queue')
     .select('*')
     .eq('newsletter_id', newsletter.id)
-    .order('created_at', { ascending: true });
+    .order('section_number', { ascending: true });
 
   if (queueError) {
     console.error('Error fetching queue:', queueError);
   }
 
-  console.log('Latest Newsletter:', JSON.stringify(newsletter, null, 2));
-  console.log('\nAll Sections:', JSON.stringify(sections, null, 2));
-  if (queueItems && queueItems.length > 0) {
-    console.log('\nGeneration Queue:', JSON.stringify(queueItems, null, 2));
-  }
+  console.log('\nNewsletter Sections:', JSON.stringify(sections, null, 2));
+  console.log('\nGeneration Queue:', JSON.stringify(queueItems, null, 2));
 }
 
-checkNewsletterStatus();
+checkGenerationQueue();

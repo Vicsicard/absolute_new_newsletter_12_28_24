@@ -6,6 +6,7 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[];
 
+// These must match database CHECK constraints exactly
 export type NewsletterStatus = 'draft' | 'draft_sent' | 'pending_contacts' | 'ready_to_send' | 'sending' | 'sent' | 'failed';
 export type DraftStatus = 'pending' | 'sent' | 'failed';
 export type ContactStatus = 'active' | 'deleted';
@@ -62,7 +63,7 @@ export interface Database {
           company_id: string;
           email: string;
           name: string | null;
-          status: ContactStatus;
+          status: 'active' | 'deleted';
           created_at: string | null;
           updated_at: string | null;
         };
@@ -71,7 +72,7 @@ export interface Database {
           company_id: string;
           email: string;
           name?: string | null;
-          status?: ContactStatus;
+          status?: 'active' | 'deleted';
           created_at?: string | null;
           updated_at?: string | null;
         };
@@ -80,7 +81,7 @@ export interface Database {
           company_id?: string;
           email?: string;
           name?: string | null;
-          status?: ContactStatus;
+          status?: 'active' | 'deleted';
           created_at?: string | null;
           updated_at?: string | null;
         };
@@ -90,7 +91,7 @@ export interface Database {
           id: string;
           company_id: string;
           filename: string;
-          status: CsvUploadStatus;
+          status: 'pending' | 'processing' | 'completed' | 'failed';
           error_message: string | null;
           processed_rows: number;
           total_rows: number;
@@ -101,7 +102,7 @@ export interface Database {
           id?: string;
           company_id: string;
           filename: string;
-          status?: CsvUploadStatus;
+          status?: 'pending' | 'processing' | 'completed' | 'failed';
           error_message?: string | null;
           processed_rows?: number;
           total_rows?: number;
@@ -112,7 +113,7 @@ export interface Database {
           id?: string;
           company_id?: string;
           filename?: string;
-          status?: CsvUploadStatus;
+          status?: 'pending' | 'processing' | 'completed' | 'failed';
           error_message?: string | null;
           processed_rows?: number;
           total_rows?: number;
@@ -126,7 +127,7 @@ export interface Database {
           newsletter_section_id: string;
           prompt: string;
           image_url: string | null;
-          status: ImageGenerationStatus;
+          status: 'pending' | 'processing' | 'completed' | 'failed';
           error_message: string | null;
           created_at: string | null;
           updated_at: string | null;
@@ -136,7 +137,7 @@ export interface Database {
           newsletter_section_id: string;
           prompt: string;
           image_url?: string | null;
-          status?: ImageGenerationStatus;
+          status?: 'pending' | 'processing' | 'completed' | 'failed';
           error_message?: string | null;
           created_at?: string | null;
           updated_at?: string | null;
@@ -146,7 +147,7 @@ export interface Database {
           newsletter_section_id?: string;
           prompt?: string;
           image_url?: string | null;
-          status?: ImageGenerationStatus;
+          status?: 'pending' | 'processing' | 'completed' | 'failed';
           error_message?: string | null;
           created_at?: string | null;
           updated_at?: string | null;
@@ -189,7 +190,7 @@ export interface Database {
           id: string;
           newsletter_id: string;
           contact_id: string;
-          status: NewsletterContactStatus;
+          status: 'pending' | 'sent' | 'failed';
           sent_at: string | null;
           error_message: string | null;
           created_at: string | null;
@@ -199,7 +200,7 @@ export interface Database {
           id?: string;
           newsletter_id: string;
           contact_id: string;
-          status?: NewsletterContactStatus;
+          status?: 'pending' | 'sent' | 'failed';
           sent_at?: string | null;
           error_message?: string | null;
           created_at?: string | null;
@@ -209,7 +210,7 @@ export interface Database {
           id?: string;
           newsletter_id?: string;
           contact_id?: string;
-          status?: NewsletterContactStatus;
+          status?: 'pending' | 'sent' | 'failed';
           sent_at?: string | null;
           error_message?: string | null;
           created_at?: string | null;
@@ -225,7 +226,7 @@ export interface Database {
           content: string;
           image_prompt: string | null;
           image_url: string | null;
-          status: NewsletterSectionStatus;
+          status: 'active' | 'deleted';
           created_at: string | null;
           updated_at: string | null;
         };
@@ -237,7 +238,7 @@ export interface Database {
           content: string;
           image_prompt?: string | null;
           image_url?: string | null;
-          status?: NewsletterSectionStatus;
+          status?: 'active' | 'deleted';
           created_at?: string | null;
           updated_at?: string | null;
         };
@@ -249,7 +250,7 @@ export interface Database {
           content?: string;
           image_prompt?: string | null;
           image_url?: string | null;
-          status?: NewsletterSectionStatus;
+          status?: 'active' | 'deleted';
           created_at?: string | null;
           updated_at?: string | null;
         };
@@ -259,10 +260,10 @@ export interface Database {
           id: string;
           company_id: string;
           subject: string;
-          draft_status: DraftStatus;
+          draft_status: 'pending' | 'sent' | 'failed';
           draft_recipient_email: string | null;
           draft_sent_at: string | null;
-          status: NewsletterStatus;
+          status: 'draft' | 'draft_sent' | 'pending_contacts' | 'ready_to_send' | 'sending' | 'sent' | 'failed';
           sent_at: string | null;
           sent_count: number;
           failed_count: number;
@@ -274,10 +275,10 @@ export interface Database {
           id?: string;
           company_id: string;
           subject: string;
-          draft_status?: DraftStatus;
+          draft_status?: 'pending' | 'sent' | 'failed';
           draft_recipient_email?: string | null;
           draft_sent_at?: string | null;
-          status?: NewsletterStatus;
+          status?: 'draft' | 'draft_sent' | 'pending_contacts' | 'ready_to_send' | 'sending' | 'sent' | 'failed';
           sent_at?: string | null;
           sent_count?: number;
           failed_count?: number;
@@ -289,10 +290,10 @@ export interface Database {
           id?: string;
           company_id?: string;
           subject?: string;
-          draft_status?: DraftStatus;
+          draft_status?: 'pending' | 'sent' | 'failed';
           draft_recipient_email?: string | null;
           draft_sent_at?: string | null;
-          status?: NewsletterStatus;
+          status?: 'draft' | 'draft_sent' | 'pending_contacts' | 'ready_to_send' | 'sending' | 'sent' | 'failed';
           sent_at?: string | null;
           sent_count?: number;
           failed_count?: number;

@@ -94,9 +94,11 @@ export type CompiledNewsletter = {
 export type CsvUpload = {
   id: string;
   company_id: string;
-  file_name: string;
-  file_size: number;
+  filename: string;
   status: CsvUploadStatus;
+  error_message: string | null;
+  processed_rows: number;
+  total_rows: number;
   created_at: string | null;
   updated_at: string | null;
 };
@@ -111,7 +113,7 @@ export type IndustryInsight = {
 };
 
 // Status types - must match database CHECK constraints exactly
-export type NewsletterStatus = 'draft' | 'ready_to_send' | 'sending' | 'sent' | 'failed';
+export type NewsletterStatus = 'draft' | 'draft_sent' | 'pending_contacts' | 'ready_to_send' | 'sending' | 'sent' | 'failed';
 export type DraftStatus = 'pending' | 'sent' | 'failed';
 export type ContactStatus = 'active' | 'deleted';
 export type NewsletterContactStatus = 'pending' | 'sent' | 'failed';

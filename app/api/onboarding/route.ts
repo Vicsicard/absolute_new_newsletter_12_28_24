@@ -99,55 +99,52 @@ export async function POST(req: NextRequest) {
             company_id: company.id,
             email: contact.email,
             name: contact.name || null,
-            status: 'active' as ContactStatus,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
           }));
         }
       } catch (error) {
         console.error('Error parsing contacts:', error);
+        throw new APIError('Invalid contacts data format', 400);
       }
     }
 
-    // Create contacts if any
-    let createdContacts: Contact[] = [];
+    // Create initial contacts
     if (contacts.length > 0) {
-      const { data: insertedContacts, error: contactsError } = await supabaseAdmin
+      console.log('Creating contacts...');
+      const { data: createdContacts, error: contactsError } = await supabaseAdmin
         .from('contacts')
-        .insert(contacts)
+        .insert(contacts.map(contact => ({
+          ...contact,
+          status: 'active' as ContactStatus,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })))
         .select();
 
       if (contactsError) {
+        console.error('Error creating contacts:', contactsError);
         throw new APIError('Failed to create contacts', 500);
       }
 
-      if (insertedContacts) {
-        createdContacts = insertedContacts;
-      }
+      console.log('Contacts created successfully:', createdContacts);
     }
 
-    // Create initial newsletter with draft status
-    console.log('Creating newsletter...');
-    const newsletterData: Partial<Newsletter> = {
-      company_id: company.id,
-      subject: jsonData?.subject || `${company.company_name} Newsletter`,
-      draft_status: 'pending' as DraftStatus,
-      draft_recipient_email: company.contact_email,
-      draft_sent_at: null,
-      status: 'draft' as NewsletterStatus,
-      sent_at: null,
-      sent_count: 0,
-      failed_count: 0,
-      last_sent_status: null,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
-    };
-
-    console.log('Creating newsletter with data:', newsletterData);
-
+    // Create initial newsletter
+    console.log('Creating initial newsletter...');
     const { data: newsletter, error: newsletterError } = await supabaseAdmin
       .from('newsletters')
-      .insert(newsletterData)
+      .insert({
+        company_id: company.id,
+        subject: `${company.company_name} Newsletter`,
+        draft_status: 'pending' as DraftStatus,
+        draft_recipient_email: company.contact_email,
+        status: 'draft' as NewsletterStatus,
+        sent_count: 0,
+        failed_count: 0,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
       .select()
       .single();
 
@@ -180,8 +177,8 @@ export async function POST(req: NextRequest) {
     }
 
     // Create newsletter contacts entries
-    if (createdContacts.length > 0) {
-      const newsletterContacts: Partial<NewsletterContact>[] = createdContacts.map(contact => ({
+    if (contacts.length > 0) {
+      const newsletterContacts: Partial<NewsletterContact>[] = contacts.map(contact => ({
         newsletter_id: newsletter.id,
         contact_id: contact.id,
         status: 'pending' as NewsletterContactStatus,
@@ -238,7 +235,7 @@ export async function POST(req: NextRequest) {
         data: {
           company,
           newsletter,
-          contacts: createdContacts
+          contacts: contacts
         }
       });
 

@@ -59,3 +59,9 @@ CHECK (compiled_status = ANY(ARRAY[
 - `compiled_newsletters_pkey`: Primary key on `id`
 - `compiled_newsletters_newsletter_id_key`: Unique index on `newsletter_id`
 - `idx_compiled_newsletters_status`: Index on `compiled_status`
+
+### Newsletter Generation Queue
+- `newsletter_generation_queue_pkey`: Primary key on `id`
+- `newsletter_generation_queue_newsletter_id_section_type_key`: Unique index on `(newsletter_id, section_type)`
+- `newsletter_generation_queue_status_idx`: Index on `status`
+- `newsletter_generation_queue_newsletter_id_idx`: Index on `newsletter_id`

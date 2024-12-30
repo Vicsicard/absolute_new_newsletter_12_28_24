@@ -39,7 +39,9 @@ export async function POST(req: Request) {
       .select(`
         *,
         company:companies!inner (*),
-        newsletter_sections (*)
+        newsletter_sections (
+          *
+        )
       `)
       .eq('id', newsletterId)
       .eq('status', 'ready_to_send')
@@ -55,7 +57,10 @@ export async function POST(req: Request) {
     // Update to sending status
     const { error: sendingError } = await supabaseAdmin
       .from('newsletters')
-      .update({ status: 'sending' as NewsletterStatus })
+      .update({ 
+        status: 'sending' as NewsletterStatus,
+        updated_at: new Date().toISOString()
+      })
       .eq('id', newsletterId);
 
     if (sendingError) {

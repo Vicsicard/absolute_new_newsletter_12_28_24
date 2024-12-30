@@ -16,6 +16,24 @@ interface GenerateOptions {
   audienceDescription?: string;
 }
 
+// Section types and their prompts
+const SECTION_CONFIG = {
+  welcome: {
+    prompt: "Write a welcome message",
+    sectionNumber: 1
+  },
+  industry_trends: {
+    prompt: "Write about current industry trends and innovations",
+    sectionNumber: 2
+  },
+  practical_tips: {
+    prompt: "Provide practical tips and best practices",
+    sectionNumber: 3
+  }
+} as const;
+
+type SectionType = keyof typeof SECTION_CONFIG;
+
 if (!process.env.OPENAI_API_KEY) {
   throw new Error('Missing OPENAI_API_KEY environment variable');
 }
@@ -97,6 +115,90 @@ async function waitForImageRateLimit() {
   imageGenerationTimestamps.push(now);
 }
 
+async function initializeGenerationQueue(
+  newsletterId: string,
+  supabaseAdmin: any
+): Promise<void> {
+  try {
+    // First, delete any existing queue items for this newsletter
+    const { error: deleteError } = await supabaseAdmin
+      .from('newsletter_generation_queue')
+      .delete()
+      .eq('newsletter_id', newsletterId);
+
+    if (deleteError) {
+      console.error('Error deleting existing queue items:', deleteError);
+      throw new APIError('Failed to clear existing queue items', 500);
+    }
+
+    // Create queue items for each section
+    const queueItems = Object.entries(SECTION_CONFIG).map(([type, config]) => ({
+      newsletter_id: newsletterId,
+      section_type: type,
+      section_number: config.sectionNumber,
+      status: 'pending',
+      attempts: 0,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    }));
+
+    // Insert new queue items
+    const { error: insertError } = await supabaseAdmin
+      .from('newsletter_generation_queue')
+      .insert(queueItems);
+
+    if (insertError) {
+      console.error('Error inserting queue items:', insertError);
+      throw new APIError('Failed to initialize generation queue', 500);
+    }
+  } catch (error) {
+    console.error('Error in initializeGenerationQueue:', error);
+    throw new APIError('Failed to initialize generation queue', 500);
+  }
+}
+
+async function updateQueueItemStatus(
+  supabaseAdmin: any,
+  newsletterId: string,
+  sectionType: SectionType,
+  status: 'in_progress' | 'completed' | 'failed',
+  errorMessage?: string
+): Promise<void> {
+  const timestamp = new Date().toISOString();
+  
+  // Use a transaction to safely update the queue item
+  const { data: queueItem, error: selectError } = await supabaseAdmin
+    .from('newsletter_generation_queue')
+    .select('attempts')
+    .eq('newsletter_id', newsletterId)
+    .eq('section_type', sectionType)
+    .single();
+
+  if (selectError) {
+    console.error('Error fetching queue item:', selectError);
+    return;
+  }
+
+  const attempts = status === 'failed' ? (queueItem?.attempts || 0) + 1 : undefined;
+
+  const { error: updateError } = await supabaseAdmin
+    .from('newsletter_generation_queue')
+    .update({
+      status,
+      error_message: errorMessage,
+      last_attempt_at: timestamp,
+      attempts,
+      updated_at: timestamp
+    })
+    .eq('newsletter_id', newsletterId)
+    .eq('section_type', sectionType);
+
+  if (updateError) {
+    console.error('Error updating queue item status:', updateError);
+    // Don't throw here as this is not critical
+  }
+}
+
 export async function generateNewsletter(
   newsletterId: string,
   customPrompt?: string,
@@ -165,38 +267,21 @@ export async function generateNewsletter(
       throw new APIError('Invalid OpenAI API key', 500);
     }
 
-    // First, delete any existing sections for this newsletter
-    const { error: deleteError } = await supabaseAdmin
-      .from('newsletter_sections')
-      .delete()
-      .eq('newsletter_id', newsletterId);
+    // Initialize generation queue
+    await initializeGenerationQueue(newsletterId, supabaseAdmin);
 
-    if (deleteError) {
-      console.error('Error deleting existing sections:', deleteError);
-      throw new APIError('Failed to delete existing sections', 500);
-    }
-
-    // Always start from section 1
-    const startSectionNumber = 1;
-
-    console.log('Starting section generation from number:', startSectionNumber);
-
-    // Generate sections using OpenAI
-    const sectionPrompts = [
-      customPrompt || "Write about current industry trends and innovations",
-      "Provide practical tips and best practices",
-      "Share success stories or case studies"
-    ];
-
-    console.log('Starting section generation with prompts:', sectionPrompts);
     const sections: NewsletterSectionInsert[] = [];
 
-    for (let i = 0; i < sectionPrompts.length; i++) {
-      const prompt = sectionPrompts[i];
-      const currentSectionNumber = startSectionNumber + i;
-      console.log(`Generating section ${currentSectionNumber} with prompt:`, prompt);
+    // Generate each section
+    for (const [sectionType, config] of Object.entries(SECTION_CONFIG) as [SectionType, typeof SECTION_CONFIG[SectionType]][]) {
+      console.log(`Generating section ${config.sectionNumber} (${sectionType})...`);
       
       try {
+        // Update queue status to in_progress
+        await updateQueueItemStatus(supabaseAdmin, newsletterId, sectionType, 'in_progress');
+
+        const prompt = sectionType === 'welcome' ? config.prompt : (customPrompt || config.prompt);
+        
         const response = await callOpenAIWithRetry([{
           role: "system",
           content: "You are a professional newsletter writer specializing in business content."
@@ -206,82 +291,84 @@ export async function generateNewsletter(
           Make it engaging and actionable. Include a title for this section.`
         }]);
 
-        console.log(`Generated content for section ${currentSectionNumber}:`, response.substring(0, 100) + '...');
+        console.log(`Generated content for section ${config.sectionNumber}:`, response.substring(0, 100) + '...');
 
         // Extract title and content
         const lines = response.split('\n').filter(line => line.trim());
         const title = lines[0].replace(/^#*\s*/, ''); // Remove any markdown heading symbols
         const content = lines.slice(1).join('\n').trim();
 
-        console.log(`Extracted title for section ${currentSectionNumber}:`, title);
+        console.log(`Extracted title for section ${config.sectionNumber}:`, title);
 
         // Generate image for this section
         const imagePrompt = `Create a modern, professional abstract image representing ${options.industry} concepts. The image should be minimalist and symbolic, focusing on geometric shapes, gradients, or abstract patterns. Do not include any text, letters, numbers, or human figures. Use a professional color palette suitable for ${options.industry}. The image should convey the concept of ${title} through abstract visual elements only, such as flowing lines, interconnected shapes, or dynamic compositions. Make it suitable for a business newsletter background.`;
-        console.log(`Generating image for section ${currentSectionNumber} with prompt:`, imagePrompt);
+        console.log(`Generating image for section ${config.sectionNumber} with prompt:`, imagePrompt);
         
+        let imageUrl = null;
         try {
           await waitForImageRateLimit();
-          const imageUrl = await generateImage(imagePrompt);
-          console.log(`Generated image URL for section ${currentSectionNumber}:`, imageUrl);
+          imageUrl = await generateImage(imagePrompt);
+          console.log(`Generated image URL for section ${config.sectionNumber}:`, imageUrl);
+        } catch (imageError) {
+          console.error(`Error generating image for section ${config.sectionNumber}:`, imageError);
+          // Continue without image if image generation fails
+        }
 
-          sections.push({
+        // Upsert this section
+        const { error: upsertError } = await supabaseAdmin
+          .from('newsletter_sections')
+          .upsert({
             newsletter_id: newsletterId,
-            section_number: currentSectionNumber,
+            section_number: config.sectionNumber,
             title,
             content,
             image_prompt: imagePrompt,
             image_url: imageUrl,
             status: 'active' as NewsletterSectionStatus,
-            created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
-          } as NewsletterSectionInsert);
-        } catch (imageError) {
-          console.error(`Error generating image for section ${currentSectionNumber}:`, imageError);
-          // Continue without image if image generation fails
-          sections.push({
-            newsletter_id: newsletterId,
-            section_number: currentSectionNumber,
-            title,
-            content,
-            image_prompt: imagePrompt,
-            image_url: null,
-            status: 'active' as NewsletterSectionStatus,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          } as NewsletterSectionInsert);
+          }, {
+            onConflict: 'newsletter_id,section_number'
+          });
+
+        if (upsertError) {
+          throw new Error(`Failed to upsert section: ${upsertError.message}`);
         }
 
+        // Update queue status to completed
+        await updateQueueItemStatus(supabaseAdmin, newsletterId, sectionType, 'completed');
+
         // Add delay between sections to avoid rate limits
-        if (i < sectionPrompts.length - 1) {
+        if (sectionType !== 'practical_tips') {
           console.log('Waiting before generating next section...');
           await new Promise(resolve => setTimeout(resolve, 2000));
         }
       } catch (sectionError) {
-        console.error(`Error generating section ${currentSectionNumber}:`, sectionError);
+        console.error(`Error generating section ${config.sectionNumber}:`, sectionError);
+        await updateQueueItemStatus(
+          supabaseAdmin,
+          newsletterId,
+          sectionType,
+          'failed',
+          sectionError instanceof Error ? sectionError.message : 'Unknown error'
+        );
         throw sectionError;
       }
     }
 
-    console.log('Generated all sections:', sections);
-
-    // Insert sections into database with upsert to handle any race conditions
-    console.log('Inserting sections into database...');
-    const { data, error } = await supabaseAdmin
+    // Get all sections after generation
+    const { data: finalSections, error: fetchError } = await supabaseAdmin
       .from('newsletter_sections')
-      .upsert(sections, {
-        onConflict: 'newsletter_id,section_number',
-        ignoreDuplicates: false
-      })
-      .select();
+      .select('*')
+      .eq('newsletter_id', newsletterId)
+      .order('section_number', { ascending: true });
 
-    if (error) {
-      console.error('Error inserting newsletter sections into database:', error);
-      throw new APIError('Failed to insert newsletter sections into database', 500);
+    if (fetchError) {
+      console.error('Error fetching final sections:', fetchError);
+      throw new APIError('Failed to fetch final sections', 500);
     }
 
-    console.log('Successfully inserted sections into database:', data);
-
-    return data;
+    console.log('Successfully generated/updated all sections');
+    return finalSections;
 
   } catch (error) {
     console.error('Error generating newsletter:', error);
@@ -289,43 +376,39 @@ export async function generateNewsletter(
   }
 }
 
-export function validateEmailList(emails: string[]) {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return emails.every(email => emailRegex.test(email));
+interface NewsletterSectionContent {
+  title: string;
+  content: string;
+  imageUrl?: string;
 }
 
-export function formatNewsletterHtml(content: string) {
-  // Convert markdown-like content to HTML
-  let html = content
-    .split('\n')
-    .map(line => {
-      // Headers
-      if (line.startsWith('# ')) {
-        return `<h1>${line.slice(2)}</h1>`;
-      }
-      if (line.startsWith('## ')) {
-        return `<h2>${line.slice(3)}</h2>`;
-      }
-      if (line.startsWith('### ')) {
-        return `<h3>${line.slice(4)}</h3>`;
-      }
-      
-      // Lists
-      if (line.startsWith('- ')) {
-        return `<li>${line.slice(2)}</li>`;
-      }
-      
-      // Paragraphs
-      if (line.trim()) {
-        return `<p>${line}</p>`;
-      }
-      
-      return '';
-    })
-    .join('\n');
+export function formatNewsletterHtml(sections: NewsletterSectionContent[]): string {
+  const sectionHtml = sections.map(section => `
+    <div style="margin-bottom: 30px;">
+      <h2 style="color: #333; font-size: 24px; margin-bottom: 15px;">${section.title}</h2>
+      ${section.imageUrl ? `<img src="${section.imageUrl}" alt="${section.title}" style="max-width: 100%; height: auto; margin-bottom: 15px;">` : ''}
+      <div style="color: #555; font-size: 16px; line-height: 1.6;">
+        ${section.content}
+      </div>
+    </div>
+  `).join('');
 
-  // Wrap lists in <ul> tags
-  html = html.replace(/<li>.*?<\/li>/g, match => `<ul>${match}</ul>`);
-  
-  return html;
+  return `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      </head>
+      <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        ${sectionHtml}
+      </body>
+    </html>
+  `;
+}
+
+export async function validateEmailList(emails: string[]) {
+  return emails.every(email => {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  });
 }
