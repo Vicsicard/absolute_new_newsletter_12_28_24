@@ -1,82 +1,107 @@
 # AI-Powered Newsletter Generator
 
-A modern, AI-powered newsletter generation system that creates personalized technology newsletters using OpenAI's GPT-4 and DALL-E for content and image generation.
+## Version 1.0.1
+
+An intelligent newsletter generation system that creates personalized, engaging content for businesses using AI.
 
 ## Features
 
-- 🤖 AI-powered content generation using GPT-4
-- 🎨 Automatic image generation with DALL-E
-- 📧 Email delivery via Brevo API
-- 📊 Progress tracking and status monitoring
-- 🔄 Queue-based generation system
-- 🎯 Customizable content sections
-- 💾 Persistent storage with Supabase
+### Content Generation
+- **Smart Section Structure**
+  - Welcome: Pain point analysis and industry insights
+  - Industry Trends: Common mistakes and solutions
+  - Practical Tips: Company-specific solutions and value propositions
+
+### Email Integration
+- Brevo SDK integration for reliable email delivery
+- Draft preview functionality
+- Bulk sending capabilities
+
+### Status Tracking
+- Real-time generation progress monitoring
+- Queue management system
+- Latest newsletter status endpoint
 
 ## Getting Started
 
-### Prerequisites
-
-- Node.js 18+
-- npm or yarn
-- Supabase account
-- OpenAI API key
-- Brevo API key
-
-### Environment Variables
-
-Create a `.env.local` file with the following variables:
-
-```env
-NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
-SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
-OPENAI_API_KEY=your_openai_api_key
-BREVO_API_KEY=your_brevo_api_key
-```
-
-### Installation
-
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/yourusername/newsletter-app.git
-   ```
-
-2. Install dependencies:
+1. **Environment Setup**
    ```bash
    npm install
+   cp .env.example .env
    ```
 
-3. Run the development server:
+2. **Configuration**
+   - Set up required API keys in `.env`:
+     - `OPENAI_API_KEY`
+     - `BREVO_API_KEY`
+     - `SUPABASE_URL`
+     - `SUPABASE_KEY`
+
+3. **Development**
    ```bash
    npm run dev
    ```
 
-4. Open [http://localhost:3000](http://localhost:3000) in your browser
+4. **Production Build**
+   ```bash
+   npm run build
+   npm start
+   ```
 
 ## API Endpoints
 
 ### Newsletter Generation
-- `POST /api/newsletter/generate`: Generate a new newsletter
-- `GET /api/newsletter/status/[id]`: Check newsletter generation status
-- `POST /api/newsletter/send-draft/[id]`: Send a draft newsletter
+- `POST /api/newsletter/generate`: Generate new newsletter
+- `GET /api/newsletter/status/[id]`: Check specific newsletter status
+- `GET /api/newsletter/latest`: Get latest newsletter status
+- `POST /api/newsletter/send-draft`: Send draft for review
+- `POST /api/newsletter/send`: Send final newsletter
 
-## Architecture
+## Project Structure
 
-The application uses:
-- Next.js 14 for the framework
-- Supabase for database and authentication
-- OpenAI GPT-4 for content generation
-- DALL-E for image generation
-- Brevo for email delivery
+```
+newsletter-app/
+├── app/                 # Next.js app directory
+│   ├── api/            # API routes
+│   └── components/     # React components
+├── utils/              # Utility functions
+├── docs/              # Documentation
+└── supabase/          # Database migrations
+```
+
+## Documentation
+- [Project Status](docs/PROJECT_STATUS.md)
+- [Database Indexes](docs/DATABASE_INDEXES.md)
+- [Deployment Process](docs/DEPLOYMENT_PROCESS.md)
+- [Brevo SDK Migration](docs/BREVO_SDK_MIGRATION.md)
+- [Branching Strategy](docs/BRANCHING.md)
+
+## Development
+
+### Branching Strategy
+- `master`: Production code
+- `development`: Development code
+- `feature/*`: Feature branches
+
+### Testing
+Run tests with:
+```bash
+npm test
+```
+
+## Monitoring
+- Vercel deployment logs
+- Supabase database monitoring
+- Email delivery tracking
 
 ## Contributing
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+1. Create feature branch from `development`
+2. Make changes
+3. Submit pull request
+4. Await review and merge
 
 ## License
+MIT
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details
+## Support
+For support, please check the documentation or open an issue.
