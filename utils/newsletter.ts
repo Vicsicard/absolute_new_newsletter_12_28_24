@@ -18,16 +18,34 @@ interface GenerateOptions {
 
 // Section types and their prompts
 const SECTION_CONFIG = {
-  welcome: {
-    prompt: "Write a welcome message",
+  pain_point: {
+    prompt: `Create a professional newsletter section that analyzes a critical industry pain point.
+Format:
+- Headline: Dynamic and engaging
+- Introduction: One paragraph outlining the pain point
+- Why It Matters: Three bullet points explaining importance
+- The Solution: How the company addresses this
+- The Takeaway: Strong summary with call to action`,
     sectionNumber: 1
   },
-  industry_trends: {
-    prompt: "Write about current industry trends and innovations",
+  common_mistakes: {
+    prompt: `Create a professional newsletter section about common industry mistakes.
+Format:
+- Headline: Dynamic and focused on industry mistakes
+- Introduction: One paragraph about common pitfalls
+- Mistakes to Avoid: Three specific industry mistakes
+- How Company Helps: Specific solutions
+- The Takeaway: Encouraging summary with call to action`,
     sectionNumber: 2
   },
-  practical_tips: {
-    prompt: "Provide practical tips and best practices",
+  company_solutions: {
+    prompt: `Create a professional newsletter section showcasing company solutions.
+Format:
+- Headline: Dynamic and solution-focused
+- Introduction: One paragraph about company's approach
+- How Company Helps: Three specific solutions
+- Why It's a Game-Changer: Impact explanation
+- The Takeaway: Clear next steps for readers`,
     sectionNumber: 3
   }
 } as const;
@@ -282,13 +300,30 @@ export async function generateNewsletter(
 
         const prompt = sectionType === 'welcome' ? config.prompt : (customPrompt || config.prompt);
         
-        const response = await callOpenAIWithRetry([{
-          role: "system",
-          content: "You are a professional newsletter writer specializing in business content."
-        }, {
+        // Base system message for GPT-4
+        const systemMessage = {
+          role: 'system',
+          content: `You are a professional content creator specializing in crafting engaging, polished newsletters for businesses.
+Your goal is to create high-quality, industry-specific newsletter sections that are informative, engaging, and actionable.
+
+Company Context:
+- Company Name: ${options.companyName}
+- Industry: ${options.industry}
+${options.targetAudience ? `- Target Audience: ${options.targetAudience}` : ''}
+${options.audienceDescription ? `- Audience Description: ${options.audienceDescription}` : ''}
+
+Guidelines:
+- Write in a professional, clear, and concise tone
+- Use persuasive language to emphasize company strengths
+- Include a touch of empathy to connect with the audience
+- Each section should be standalone and complete
+- Format content according to the specified structure
+- Keep content relevant to ${options.industry} industry`
+        };
+
+        const response = await callOpenAIWithRetry([systemMessage, {
           role: "user",
-          content: `${prompt} for ${options.companyName}, a ${options.industry} company targeting ${options.targetAudience || 'general audience'}. 
-          Make it engaging and actionable. Include a title for this section.`
+          content: prompt
         }]);
 
         console.log(`Generated content for section ${config.sectionNumber}:`, response.substring(0, 100) + '...');
@@ -338,7 +373,7 @@ export async function generateNewsletter(
         await updateQueueItemStatus(supabaseAdmin, newsletterId, sectionType, 'completed');
 
         // Add delay between sections to avoid rate limits
-        if (sectionType !== 'practical_tips') {
+        if (sectionType !== 'company_solutions') {
           console.log('Waiting before generating next section...');
           await new Promise(resolve => setTimeout(resolve, 2000));
         }
@@ -383,27 +418,31 @@ interface NewsletterSectionContent {
 }
 
 export function formatNewsletterHtml(sections: NewsletterSectionContent[]): string {
-  const sectionHtml = sections.map(section => `
-    <div style="margin-bottom: 30px;">
-      <h2 style="color: #333; font-size: 24px; margin-bottom: 15px;">${section.title}</h2>
-      ${section.imageUrl ? `<img src="${section.imageUrl}" alt="${section.title}" style="max-width: 100%; height: auto; margin-bottom: 15px;">` : ''}
-      <div style="color: #555; font-size: 16px; line-height: 1.6;">
-        ${section.content}
-      </div>
-    </div>
-  `).join('');
-
   return `
-    <!DOCTYPE html>
-    <html>
-      <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      </head>
-      <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-        ${sectionHtml}
-      </body>
-    </html>
+    <div style="max-width: 600px; margin: 0 auto; font-family: Arial, sans-serif; line-height: 1.6;">
+      ${sections.map((section, index) => `
+        <div style="margin-bottom: 40px; background-color: #ffffff; border-radius: 8px; padding: 25px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+          <h2 style="color: #2c3e50; margin-bottom: 20px; font-size: 24px; border-bottom: 2px solid #3498db; padding-bottom: 10px;">
+            ${section.title}
+          </h2>
+          ${section.imageUrl ? `
+            <div style="margin: 20px 0;">
+              <img src="${section.imageUrl}" alt="Section illustration" style="max-width: 100%; height: auto; border-radius: 4px; display: block; margin: 0 auto;">
+            </div>
+          ` : ''}
+          <div style="color: #34495e; font-size: 16px;">
+            ${section.content.split('\n').map(paragraph => 
+              paragraph.trim().startsWith('-') || paragraph.trim().startsWith('•')
+                ? `<li style="margin-bottom: 10px;">${paragraph.replace(/^[-•]\s*/, '')}</li>`
+                : paragraph.toLowerCase().includes('takeaway')
+                  ? `<div style="background-color: #f8f9fa; padding: 15px; border-left: 4px solid #3498db; margin: 20px 0;">${paragraph}</div>`
+                  : `<p style="margin-bottom: 15px;">${paragraph}</p>`
+            ).join('')}
+          </div>
+          ${index < sections.length - 1 ? '<hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;">' : ''}
+        </div>
+      `).join('')}
+    </div>
   `;
 }
 
