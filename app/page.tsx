@@ -51,7 +51,12 @@ export default function Home() {
         throw new Error(data.message || 'Failed to submit form');
       }
 
-      setSuccess(data.message || 'Newsletter setup completed! Check your email for the draft.');
+      const contactEmail = formData.get('contact_email');
+      setSuccess(
+        `✨ Newsletter setup complete! ✨\n\n` +
+        `Your form has been successfully submitted. You will receive a draft newsletter at ${contactEmail} within the next hour.\n\n` +
+        `Our AI is working on creating personalized content for your audience. Feel free to close this window - we'll notify you by email when your newsletter is ready.`
+      );
       if (formRef.current) {
         formRef.current.reset();
       }
@@ -70,12 +75,13 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-gray-100 py-6 flex flex-col justify-center sm:py-12">
-      <div className="relative py-3 sm:max-w-xl sm:mx-auto">
+      <div className="relative py-3 sm:max-w-3xl sm:mx-auto">
         <div className="relative px-4 py-10 bg-white mx-8 md:mx-0 shadow rounded-3xl sm:p-10">
-          <div className="max-w-md mx-auto">
+          <div className="max-w-2xl mx-auto">
             <div className="divide-y divide-gray-200">
               <div className="py-8 text-base leading-6 space-y-4 text-gray-700 sm:text-lg sm:leading-7">
-                <h2 className="text-2xl font-bold mb-8 text-center text-gray-900">Newsletter Setup</h2>
+                <h2 className="text-3xl font-bold mb-8 text-center text-gray-900">Newsletter Onboarding Form</h2>
+                <p className="text-gray-500 text-center mb-8">Fill out this form to set up your personalized AI-powered newsletter</p>
                 <form ref={formRef} onSubmit={handleSubmit} className="space-y-6">
                   <div>
                     <label htmlFor="company_name" className="block text-sm font-medium text-gray-700">Company Name</label>
@@ -84,10 +90,12 @@ export default function Home() {
                       name="company_name"
                       id="company_name"
                       required
+                      placeholder="e.g., Digital Rascal Marketing"
                       className={`mt-1 block w-full rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm ${
                         formErrors.company_name ? 'border-red-500' : 'border-gray-300'
                       }`}
                     />
+                    <p className="mt-1 text-sm text-gray-500">Enter your company's official business name</p>
                     {formErrors.company_name && (
                       <p className="mt-2 text-sm text-red-600">{formErrors.company_name}</p>
                     )}
@@ -99,10 +107,12 @@ export default function Home() {
                       type="url"
                       name="website_url"
                       id="website_url"
+                      placeholder="e.g., https://www.digitalrascal.com"
                       className={`mt-1 block w-full rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm ${
                         formErrors.website_url ? 'border-red-500' : 'border-gray-300'
                       }`}
                     />
+                    <p className="mt-1 text-sm text-gray-500">Your company's website address (optional)</p>
                     {formErrors.website_url && (
                       <p className="mt-2 text-sm text-red-600">{formErrors.website_url}</p>
                     )}
@@ -115,10 +125,12 @@ export default function Home() {
                       name="contact_email"
                       id="contact_email"
                       required
+                      placeholder="e.g., contact@digitalrascal.com"
                       className={`mt-1 block w-full rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm ${
                         formErrors.contact_email ? 'border-red-500' : 'border-gray-300'
                       }`}
                     />
+                    <p className="mt-1 text-sm text-gray-500">We'll send newsletter drafts to this email</p>
                     {formErrors.contact_email && (
                       <p className="mt-2 text-sm text-red-600">{formErrors.contact_email}</p>
                     )}
@@ -130,10 +142,12 @@ export default function Home() {
                       type="tel"
                       name="phone_number"
                       id="phone_number"
+                      placeholder="e.g., +1 (555) 123-4567"
                       className={`mt-1 block w-full rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm ${
                         formErrors.phone_number ? 'border-red-500' : 'border-gray-300'
                       }`}
                     />
+                    <p className="mt-1 text-sm text-gray-500">Your business contact number (optional)</p>
                     {formErrors.phone_number && (
                       <p className="mt-2 text-sm text-red-600">{formErrors.phone_number}</p>
                     )}
@@ -146,10 +160,12 @@ export default function Home() {
                       name="industry"
                       id="industry"
                       required
+                      placeholder="e.g., Digital Marketing, Real Estate, Healthcare"
                       className={`mt-1 block w-full rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm ${
                         formErrors.industry ? 'border-red-500' : 'border-gray-300'
                       }`}
                     />
+                    <p className="mt-1 text-sm text-gray-500">Your primary business industry or sector</p>
                     {formErrors.industry && (
                       <p className="mt-2 text-sm text-red-600">{formErrors.industry}</p>
                     )}
@@ -162,11 +178,12 @@ export default function Home() {
                       name="target_audience"
                       id="target_audience"
                       required
-                      placeholder="e.g., Small Business Owners, Marketing Professionals"
+                      placeholder="e.g., Small Business Owners, Marketing Professionals, Healthcare Providers"
                       className={`mt-1 block w-full rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm ${
                         formErrors.target_audience ? 'border-red-500' : 'border-gray-300'
                       }`}
                     />
+                    <p className="mt-1 text-sm text-gray-500">Who is your newsletter primarily targeting?</p>
                     {formErrors.target_audience && (
                       <p className="mt-2 text-sm text-red-600">{formErrors.target_audience}</p>
                     )}
@@ -178,12 +195,13 @@ export default function Home() {
                       name="audience_description"
                       id="audience_description"
                       required
-                      rows={3}
-                      placeholder="Describe your target audience in detail..."
+                      rows={4}
+                      placeholder="e.g., Our newsletter targets small business owners aged 30-50 who are looking to improve their digital marketing strategies. They are tech-savvy but time-constrained, seeking practical tips and industry insights."
                       className={`mt-1 block w-full rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm ${
                         formErrors.audience_description ? 'border-red-500' : 'border-gray-300'
                       }`}
                     />
+                    <p className="mt-1 text-sm text-gray-500">Provide detailed information about your target audience to help us create more relevant content</p>
                     {formErrors.audience_description && (
                       <p className="mt-2 text-sm text-red-600">{formErrors.audience_description}</p>
                     )}
