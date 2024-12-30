@@ -18,7 +18,7 @@ if (!process.env.BREVO_API_KEY || !process.env.BREVO_SENDER_EMAIL || !process.en
 }
 
 // Configure API route
-export const runtime = 'edge';
+export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: Request) {
@@ -130,12 +130,12 @@ export async function POST(req: Request) {
     // Update contact statuses
     const contactUpdates = contacts.map(contact => ({
       id: contact.id,
-      status: result.successful.find(s => s.email === contact.contact.email)
+      status: result.successful.includes(contact.contact.email)
         ? 'sent' as NewsletterContactStatus
         : result.failed.find(f => f.email === contact.contact.email)
         ? 'failed' as NewsletterContactStatus
         : 'pending' as NewsletterContactStatus,
-      sent_at: result.successful.find(s => s.email === contact.contact.email)
+      sent_at: result.successful.includes(contact.contact.email)
         ? new Date().toISOString()
         : null,
       error_message: result.failed.find(f => f.email === contact.contact.email)?.error || null

@@ -111,19 +111,19 @@ export async function POST(request: Request) {
       throw new APIError('Failed to send draft email', 500);
     }
 
-    // Update newsletter status based on send result
+    // Update newsletter status
     const hasErrors = result.failed.length > 0;
-    const updateData: Pick<Newsletter, 'draft_status' | 'draft_sent_at' | 'last_sent_status' | 'status'> = {
+    const updates = {
       draft_status: hasErrors ? 'failed' : 'sent' as DraftStatus,
       draft_sent_at: hasErrors ? null : new Date().toISOString(),
-      last_sent_status: hasErrors ? `Error: ${result.failed[0]?.error_message || 'Unknown error'}` : 'success',
+      last_sent_status: hasErrors ? `Error: ${result.failed[0]?.error || 'Unknown error'}` : 'success',
       status: hasErrors ? 'draft' : 'draft_sent' as NewsletterStatus
     };
 
-    console.log('Updating newsletter status:', updateData);
+    console.log('Updating newsletter status:', updates);
     const { error: updateError } = await supabaseAdmin
       .from('newsletters')
-      .update(updateData)
+      .update(updates)
       .eq('id', newsletterId);
 
     if (updateError) {

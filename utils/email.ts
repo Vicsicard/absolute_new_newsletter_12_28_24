@@ -1,46 +1,26 @@
+import { TransactionalEmailsApi, SendSmtpEmail } from '@getbrevo/brevo';
 import { Database } from '@/types/database';
 import { getSupabaseAdmin } from '@/utils/supabase-admin';
 import { APIError } from '@/utils/errors';
 
 type Contact = Database['public']['Tables']['contacts']['Row'];
-type Newsletter = Database['public']['Tables']['newsletters']['Row'];
 type NewsletterContact = Database['public']['Tables']['newsletter_contacts']['Row'];
+type NewsletterContactStatus = Database['public']['Tables']['newsletter_contacts']['Row']['status'];
 
-interface BrevoEmailResponse {
-  messageId: string;
-}
+// Initialize Brevo API client with configuration
+const apiInstance = new TransactionalEmailsApi();
 
-interface BrevoError {
-  code: string;
-  message: string;
-}
+// Configure API key authorization
+apiInstance.setApiKey(TransactionalEmailsApi.name, process.env.BREVO_API_KEY || '');
 
-export interface BulkEmailResult {
-  successful: Array<{
-    email: string;
-    messageId: string;
-    sent_at: string;
-  }>;
-  failed: Array<{
-    email: string;
-    error: string;
-    error_message: string;
-  }>;
-}
-
-if (!process.env.BREVO_API_KEY || !process.env.BREVO_SENDER_EMAIL || !process.env.BREVO_SENDER_NAME) {
-  throw new Error('Missing required Brevo environment variables');
-}
-
-const BREVO_API_URL = 'https://api.brevo.com/v3/smtp/email';
-const BREVO_API_KEY = process.env.BREVO_API_KEY;
-const SENDER = {
-  email: process.env.BREVO_SENDER_EMAIL,
-  name: process.env.BREVO_SENDER_NAME
+// Configure default headers
+apiInstance.defaultHeaders = {
+  'Content-Type': 'application/json',
+  'Accept': 'application/json'
 };
 
 /**
- * Send a single email using Brevo API
+ * Send a single email using Brevo Transactional Email API
  */
 export async function sendEmail(
   to: Pick<Contact, 'email' | 'name'>,
@@ -54,130 +34,171 @@ export async function sendEmail(
       throw new Error(`Invalid email format: ${to.email}`);
     }
 
-    console.log('Attempting to send email:', {
-      to: to.email,
-      subject,
-      sender: SENDER.email,
-      apiUrl: BREVO_API_URL,
-      hasApiKey: !!BREVO_API_KEY,
-      contentLength: htmlContent.length
-    });
-
-    // Validate Brevo configuration
-    if (!BREVO_API_KEY || !SENDER.email || !SENDER.name) {
-      console.error('Missing Brevo configuration:', {
-        hasApiKey: !!BREVO_API_KEY,
-        hasSenderEmail: !!SENDER.email,
-        hasSenderName: !!SENDER.name
-      });
-      throw new Error('Invalid Brevo configuration');
+    // Validate required environment variables
+    if (!process.env.BREVO_API_KEY) {
+      throw new Error('Missing BREVO_API_KEY environment variable');
+    }
+    if (!process.env.BREVO_SENDER_EMAIL) {
+      throw new Error('Missing BREVO_SENDER_EMAIL environment variable');
     }
 
-    const emailData = {
-      sender: SENDER,
-      to: [{
-        email: to.email,
-        name: to.name || undefined // Use undefined to match database schema
-      }],
+    console.log('Preparing to send email with Brevo:', {
+      recipient: to.email,
       subject,
-      htmlContent,
-      textContent: htmlContent.replace(/<[^>]*>/g, '') // Strip HTML for text version
+      senderEmail: process.env.BREVO_SENDER_EMAIL,
+      senderName: process.env.BREVO_SENDER_NAME || 'Newsletter App'
+    });
+
+    const sendSmtpEmail = new SendSmtpEmail();
+    
+    sendSmtpEmail.sender = {
+      name: process.env.BREVO_SENDER_NAME || 'Newsletter App',
+      email: process.env.BREVO_SENDER_EMAIL
     };
+    
+    sendSmtpEmail.to = [{
+      email: to.email,
+      name: to.name || undefined
+    }];
+    
+    sendSmtpEmail.subject = subject;
+    sendSmtpEmail.htmlContent = htmlContent;
+    sendSmtpEmail.textContent = htmlContent.replace(/<[^>]*>/g, '');
 
-    console.log('Sending email with data:', {
-      ...emailData,
-      htmlContent: `${emailData.htmlContent.substring(0, 100)}...` // Log just the start
-    });
-
-    const response = await fetch(BREVO_API_URL, {
-      method: 'POST',
-      headers: {
-        'accept': 'application/json',
-        'api-key': BREVO_API_KEY,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify(emailData)
-    });
-
-    console.log('Brevo API response status:', response.status);
-    console.log('Brevo API response headers:', Object.fromEntries(response.headers.entries()));
-    const responseText = await response.text();
-    console.log('Brevo API raw response:', responseText);
-
-    if (!response.ok) {
-      let errorMessage = 'Unknown error';
+    // Send the email with retry logic
+    const response = await retry(async () => {
       try {
-        const errorData = JSON.parse(responseText) as BrevoError;
-        errorMessage = `Brevo API error: ${errorData.message} (Code: ${errorData.code})`;
-      } catch {
-        errorMessage = `Brevo API error (${response.status}): ${responseText}`;
+        console.log('Sending email with Brevo:', {
+          to: to.email,
+          subject,
+          senderEmail: process.env.BREVO_SENDER_EMAIL
+        });
+
+        const result = await apiInstance.sendTransacEmail(sendSmtpEmail);
+        
+        if (!result || !result.body || !result.response || result.response.statusCode >= 400) {
+          console.error('Brevo API error:', {
+            status: result?.response?.statusCode,
+            statusText: result?.response?.statusMessage,
+            body: result?.body
+          });
+          throw new Error(`Brevo API error: ${result?.response?.statusMessage || 'Unknown error'}`);
+        }
+
+        console.log('Raw API Response:', {
+          status: result.response.statusCode,
+          body: result.body
+        });
+        
+        return result;
+      } catch (error: any) {
+        console.error('Brevo API Error:', {
+          message: error.message,
+          response: error.response?.text,
+          status: error.status,
+          headers: error.response?.headers
+        });
+        throw error;
       }
-      console.error('Email sending failed:', {
-        status: response.status,
-        statusText: response.statusText,
-        error: errorMessage
-      });
-      throw new Error(errorMessage);
+    }, 3, 2000); // Increased retry delay to 2 seconds
+
+    if (!response || !response.body) {
+      throw new Error('No response received from Brevo API');
     }
 
-    let data: BrevoEmailResponse;
-    try {
-      data = JSON.parse(responseText);
-      console.log('Email sent successfully:', {
-        messageId: data.messageId,
-        to: to.email,
-        subject
-      });
-      return data.messageId;
-    } catch (error) {
-      console.error('Error parsing Brevo API response:', {
-        error,
-        responseText
-      });
-      throw new Error('Failed to parse Brevo API response');
-    }
+    // Extract message ID from response
+    const messageId = response.body.messageId || 'unknown';
+
+    console.log('Email sent successfully:', {
+      messageId,
+      to: to.email,
+      subject
+    });
+
+    return messageId;
   } catch (error) {
-    console.error('Error sending email:', {
+    console.error('Detailed error sending email:', {
       error,
-      message: error instanceof Error ? error.message : 'Unknown error',
-      stack: error instanceof Error ? error.stack : undefined
+      stack: error instanceof Error ? error.stack : undefined,
+      recipient: to.email,
+      subject
     });
     throw error;
   }
 }
 
 /**
- * Send bulk emails using Brevo API
- * Returns results for both successful and failed sends
+ * Retry a function with exponential backoff
+ */
+async function retry<T>(
+  fn: () => Promise<T>,
+  retries: number = 3,
+  delay: number = 1000
+): Promise<T> {
+  try {
+    return await fn();
+  } catch (error) {
+    if (retries === 0) throw error;
+    
+    console.log(`Retrying after ${delay}ms...`, {
+      retriesLeft: retries - 1,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+    
+    await new Promise(resolve => setTimeout(resolve, delay));
+    return retry(fn, retries - 1, delay * 2);
+  }
+}
+
+/**
+ * Validate email format
+ */
+export function validateEmail(email: string): boolean {
+  const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+  return emailRegex.test(email);
+}
+
+/**
+ * Send bulk emails using Brevo Transactional Email API
+ * Implements concurrent sending with rate limiting
  */
 export async function sendBulkEmails(
-  contacts: Pick<Contact, 'email' | 'name'>[],
+  recipients: Array<Pick<Contact, 'email' | 'name'>>,
   subject: string,
   htmlContent: string
-): Promise<BulkEmailResult> {
-  const results: BulkEmailResult = {
-    successful: [],
-    failed: []
-  };
+): Promise<{ successful: string[]; failed: Array<{ email: string; error: string }> }> {
+  const successful: string[] = [];
+  const failed: Array<{ email: string; error: string }> = [];
 
-  for (const contact of contacts) {
-    try {
-      const messageId = await sendEmail(contact, subject, htmlContent);
-      results.successful.push({
-        email: contact.email,
-        messageId,
-        sent_at: new Date().toISOString()
-      });
-    } catch (error) {
-      results.failed.push({
-        email: contact.email,
-        error: error instanceof Error ? error.name : 'UnknownError',
-        error_message: error instanceof Error ? error.message : 'Unknown error occurred'
-      });
-    }
+  // Send emails in parallel with a maximum of 3 concurrent requests
+  // This helps prevent rate limiting issues
+  const concurrencyLimit = 3;
+  for (let i = 0; i < recipients.length; i += concurrencyLimit) {
+    const batch = recipients.slice(i, i + concurrencyLimit);
+    const results = await Promise.allSettled(
+      batch.map(recipient => 
+        sendEmail(recipient, subject, htmlContent)
+      )
+    );
+
+    results.forEach((result, index) => {
+      const recipient = batch[index];
+      if (result.status === 'fulfilled') {
+        successful.push(recipient.email);
+      } else {
+        failed.push({
+          email: recipient.email,
+          error: result.reason instanceof Error ? result.reason.message : 'Unknown error'
+        });
+      }
+    });
   }
 
-  return results;
+  if (failed.length > 0) {
+    console.error('Some emails failed to send:', failed);
+  }
+
+  return { successful, failed };
 }
 
 /**
@@ -190,7 +211,7 @@ export async function sendNewsletter(
   contacts: Pick<Contact, 'email' | 'name'>[],
   subject: string,
   htmlContent: string
-): Promise<BulkEmailResult> {
+): Promise<{ successful: string[]; failed: Array<{ email: string; error: string }> }> {
   const supabaseAdmin = getSupabaseAdmin();
 
   try {
@@ -198,7 +219,7 @@ export async function sendNewsletter(
     const { error: updateError } = await supabaseAdmin
       .from('newsletters')
       .update({ 
-        status: 'sending' as Newsletter['status'],
+        status: 'sending',
         last_sent_status: 'Sending in progress'
       })
       .eq('id', newsletterId);
@@ -212,7 +233,7 @@ export async function sendNewsletter(
 
     // Update newsletter status based on results
     const updates = {
-      status: results.failed.length === 0 ? 'sent' : 'failed' as Newsletter['status'],
+      status: results.failed.length === 0 ? 'sent' : 'failed',
       sent_count: results.successful.length,
       failed_count: results.failed.length,
       last_sent_status: results.failed.length === 0 
@@ -236,7 +257,7 @@ export async function sendNewsletter(
     await supabaseAdmin
       .from('newsletters')
       .update({
-        status: 'failed' as Newsletter['status'],
+        status: 'failed',
         last_sent_status: error instanceof Error ? error.message : 'Unknown error occurred'
       })
       .eq('id', newsletterId);
@@ -246,17 +267,14 @@ export async function sendNewsletter(
 }
 
 /**
- * Validate email format
- */
-export function validateEmail(email: string): boolean {
-  const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
-  return emailRegex.test(email);
-}
-
-/**
  * Validate a list of email addresses
  * Returns array of invalid email addresses
  */
 export function validateEmailList(emails: string[]): string[] {
   return emails.filter(email => !validateEmail(email));
+}
+
+// Validate required environment variables on startup
+if (!process.env.BREVO_API_KEY || !process.env.BREVO_SENDER_EMAIL || !process.env.BREVO_SENDER_NAME) {
+  throw new Error('Missing required Brevo environment variables');
 }

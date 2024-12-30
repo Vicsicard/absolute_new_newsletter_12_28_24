@@ -1,62 +1,52 @@
-# Newsletter Application
+# Newsletter Generation App
 
 ## Overview
-This is a newsletter application built with Next.js for the frontend and Supabase for the backend. It allows users to create, manage, and send newsletters to their contacts.
+A sophisticated newsletter generation application leveraging AI and email marketing technologies.
 
-## Features
-- **Onboarding**: Users can create a company and add contacts.
-- **Newsletter Management**: Create and manage newsletters, including sections and content.
-- **Email Sending**: Send newsletters to contacts with tracking for sent and failed emails.
+## Current Version
+0.3.0 (Development)
 
-## Getting Started
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/Vicsicard/absolute_new_newsletter_12_28_24.git
-   cd newsletter-app
-   ```
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
-3. Set up environment variables in a `.env.local` file based on the provided `.env.example`.
-4. Run the development server:
-   ```bash
-   npm run dev
-   ```
+## Key Features
+- AI-powered newsletter content generation
+- Brevo API email integration
+- Dynamic section creation
+- Personalized content for businesses
+
+## Recent Updates
+- Improved newsletter section generation logic
+- Enhanced Brevo API error handling
+- More robust email sending mechanisms
+
+## Technology Stack
+- Next.js
+- React
+- TypeScript
+- OpenAI API
+- Brevo API
+- Supabase
+
+## Environment Setup
+1. Clone the repository
+2. Install dependencies: `npm install`
+3. Set up environment variables:
+   - `BREVO_API_KEY`
+   - `BREVO_SENDER_EMAIL`
+   - `OPENAI_API_KEY`
+   - `SUPABASE_URL`
+   - `SUPABASE_SERVICE_ROLE_KEY`
 
 ## Deployment
-This application is deployed on Vercel. For detailed deployment instructions, refer to the `DEPLOYMENT_PROCESS.md` file.
-
-## Current Status
-- The application is currently in a stable state, ready for deployment.
-- Recent updates include:
-  - Enhanced email sending functionality.
-  - Improved error handling and logging.
-  - Aligned all types with the Supabase schema.
-
-## Upcoming Features
-- Analytics tracking implementation.
-- UI/UX enhancements based on user feedback.
-- Support for images in newsletters.
-
-## Dependencies
-- OpenAI API (GPT-4 & DALL-E 3)
-- Brevo Email Service
-- Supabase Database
-- Next.js 14
-- TypeScript
-- Tailwind CSS
-
-## Environment Variables
-Required for production:
-- `OPENAI_API_KEY`
-- `SUPABASE_URL`
-- `SUPABASE_SERVICE_ROLE_KEY`
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- `BREVO_API_KEY`
-- `BREVO_SENDER_EMAIL`
-- `BREVO_SENDER_NAME`
+Deployed on Vercel with continuous integration
 
 ## Known Issues
-- None currently reported
+- Occasional email sending failures
+- Deployment build complexities
+
+## Contributing
+Please read CONTRIBUTING.md for details on our code of conduct and the process for submitting pull requests.
+
+## License
+This project is licensed under the MIT License - see the LICENSE.md file for details
+
+## Support
+For issues, please file a GitHub issue with detailed description and reproduction steps.
