@@ -138,73 +138,75 @@ export default function Home() {
         </p>
       </div>
       
-      <div className="relative py-3 sm:max-w-xl sm:mx-auto">
+      <div className="relative py-3 sm:max-w-4xl sm:mx-auto">
         <div className="relative px-4 py-10 bg-white mx-8 md:mx-0 shadow-2xl rounded-2xl sm:p-10">
-          <div className="max-w-md mx-auto">
+          <div className="max-w-3xl mx-auto">
             <div className="divide-y divide-gray-200">
               <div className="py-8 text-base leading-6 space-y-4 text-gray-700 sm:text-lg sm:leading-7">
                 <h2 className="text-3xl font-bold mb-8 text-center text-gray-900">Newsletter Setup</h2>
                 <form ref={formRef} onSubmit={handleSubmit} className="space-y-6">
-                  <div>
-                    <label htmlFor="company_name" className="block text-sm font-medium text-gray-700 mb-1">Company Name</label>
-                    <input
-                      type="text"
-                      name="company_name"
-                      id="company_name"
-                      required
-                      placeholder="Enter your company name"
-                      className={`mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-3 ${
-                        formErrors.company_name ? 'border-red-500' : 'border-gray-300'
-                      }`}
-                    />
-                    {formErrors.company_name && (
-                      <p className="mt-2 text-sm text-red-600">{formErrors.company_name}</p>
-                    )}
-                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <label htmlFor="company_name" className="block text-sm font-medium text-gray-700 mb-1">Company Name</label>
+                      <input
+                        type="text"
+                        name="company_name"
+                        id="company_name"
+                        required
+                        placeholder="Enter your company name"
+                        className={`mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-3 ${
+                          formErrors.company_name ? 'border-red-500' : 'border-gray-300'
+                        }`}
+                      />
+                      {formErrors.company_name && (
+                        <p className="mt-2 text-sm text-red-600">{formErrors.company_name}</p>
+                      )}
+                    </div>
 
-                  <div>
-                    <label htmlFor="website_url" className="block text-sm font-medium text-gray-700 mb-1">Website URL</label>
-                    <input
-                      type="url"
-                      name="website_url"
-                      id="website_url"
-                      placeholder="https://your-company.com"
-                      className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-3"
-                    />
-                  </div>
+                    <div>
+                      <label htmlFor="website_url" className="block text-sm font-medium text-gray-700 mb-1">Website URL</label>
+                      <input
+                        type="url"
+                        name="website_url"
+                        id="website_url"
+                        placeholder="https://your-company.com"
+                        className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-3"
+                      />
+                    </div>
 
-                  <div>
-                    <label htmlFor="industry" className="block text-sm font-medium text-gray-700 mb-1">Industry</label>
-                    <input
-                      type="text"
-                      name="industry"
-                      id="industry"
-                      required
-                      placeholder="Your industry"
-                      className={`mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-3 ${
-                        formErrors.industry ? 'border-red-500' : 'border-gray-300'
-                      }`}
-                    />
-                    {formErrors.industry && (
-                      <p className="mt-2 text-sm text-red-600">{formErrors.industry}</p>
-                    )}
-                  </div>
+                    <div>
+                      <label htmlFor="industry" className="block text-sm font-medium text-gray-700 mb-1">Industry</label>
+                      <input
+                        type="text"
+                        name="industry"
+                        id="industry"
+                        required
+                        placeholder="Your industry"
+                        className={`mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-3 ${
+                          formErrors.industry ? 'border-red-500' : 'border-gray-300'
+                        }`}
+                      />
+                      {formErrors.industry && (
+                        <p className="mt-2 text-sm text-red-600">{formErrors.industry}</p>
+                      )}
+                    </div>
 
-                  <div>
-                    <label htmlFor="contact_email" className="block text-sm font-medium text-gray-700 mb-1">Contact Email</label>
-                    <input
-                      type="email"
-                      name="contact_email"
-                      id="contact_email"
-                      required
-                      placeholder="your@email.com"
-                      className={`mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-3 ${
-                        formErrors.contact_email ? 'border-red-500' : 'border-gray-300'
-                      }`}
-                    />
-                    {formErrors.contact_email && (
-                      <p className="mt-2 text-sm text-red-600">{formErrors.contact_email}</p>
-                    )}
+                    <div>
+                      <label htmlFor="contact_email" className="block text-sm font-medium text-gray-700 mb-1">Contact Email</label>
+                      <input
+                        type="email"
+                        name="contact_email"
+                        id="contact_email"
+                        required
+                        placeholder="your@email.com"
+                        className={`mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-3 ${
+                          formErrors.contact_email ? 'border-red-500' : 'border-gray-300'
+                        }`}
+                      />
+                      {formErrors.contact_email && (
+                        <p className="mt-2 text-sm text-red-600">{formErrors.contact_email}</p>
+                      )}
+                    </div>
                   </div>
 
                   <div>
