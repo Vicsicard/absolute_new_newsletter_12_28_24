@@ -66,7 +66,8 @@ async function callOpenAIWithRetry(messages: any[], retries = 5, delay = 60000):
         messages,
         model: 'gpt-4',
         temperature: 0.7,
-        max_tokens: 2000,
+        max_tokens: 2000
+      }, {
         timeout: 180000 // 3 minute timeout
       });
 
