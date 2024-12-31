@@ -1,6 +1,6 @@
-const { createClient } = require('@supabase/supabase-js');
-const dotenv = require('dotenv');
-const { join } = require('path');
+import { createClient } from '@supabase/supabase-js';
+import * as dotenv from 'dotenv';
+import { join } from 'path';
 
 // Load environment variables from .env.local
 dotenv.config({ path: join(process.cwd(), '.env.local') });
@@ -16,23 +16,28 @@ if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
+type NewsletterGenerationQueueStatus = 'pending' | 'in_progress' | 'completed' | 'failed';
+
 interface QueueItem {
   id: string;
   newsletter_id: string;
   section_type: string;
-  section_number: number;
   status: string;
-  error_message: string | null;
   attempts: number;
-  last_attempt_at: string | null;
+  error_message: string | null;
   created_at: string;
   updated_at: string;
 }
 
 interface Newsletter {
   id: string;
+  company_id: string;
   status: string;
   subject: string;
+  draft_recipient_email: string | null;
+  draft_status: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 interface NewsletterSection {
@@ -119,7 +124,7 @@ async function checkQueue() {
 
       console.log('\nDetailed Status:');
       queueItems.forEach((item: QueueItem) => {
-        console.log(`Section ${item.section_number}: ${item.status.toUpperCase()} (${item.attempts} attempts) - ${item.section_type}`);
+        console.log(`${item.section_type}: ${item.status.toUpperCase()} (${item.attempts} attempts)`);
         if (item.error_message) {
           console.log(`  Error: ${item.error_message}`);
         }
@@ -176,7 +181,7 @@ async function fixQueueItems(newsletterIds: string[]) {
 
     // For each queue item, check if section exists and update status
     for (const queueItem of (queueItems as QueueItem[])) {
-      const existingSection = (sections as NewsletterSection[])?.find(s => s.section_number === queueItem.section_number);
+      const existingSection = (sections as NewsletterSection[])?.find(s => s.section_number === parseInt(queueItem.section_type));
       if (existingSection && queueItem.status === 'pending') {
         console.log(`Updating queue item ${queueItem.id} to completed (section exists)`);
         const { error: updateError } = await supabaseAdmin

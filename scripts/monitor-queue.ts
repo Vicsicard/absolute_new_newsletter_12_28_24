@@ -1,6 +1,6 @@
-const { createClient } = require('@supabase/supabase-js');
-const dotenv = require('dotenv');
-const { join } = require('path');
+import { createClient } from '@supabase/supabase-js';
+import * as dotenv from 'dotenv';
+import { join } from 'path';
 
 // Load environment variables from .env.local
 dotenv.config({ path: join(process.cwd(), '.env.local') });
@@ -20,21 +20,28 @@ const supabase = createClient(
   }
 )
 
-type QueueItem = {
-  id: number
-  newsletter_id: number
-  section_number: number
-  status: string
-  attempts: number
-  section_type: string
-  error_message: string | null
+type NewsletterGenerationQueueStatus = 'pending' | 'in_progress' | 'completed' | 'failed';
+
+interface QueueItem {
+  id: string;
+  newsletter_id: string;
+  section_type: string;
+  status: string;
+  attempts: number;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
-type Newsletter = {
-  id: number
-  status: string
-  subject: string
-  created_at: Date
+interface Newsletter {
+  id: string;
+  company_id: string;
+  status: string;
+  subject: string;
+  draft_recipient_email: string | null;
+  draft_status: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 async function monitorQueue() {
@@ -99,7 +106,7 @@ async function monitorQueue() {
       queueItems.forEach((item: QueueItem) => {
         const status = item.status.toUpperCase().padEnd(11);
         const attempts = `(${item.attempts} attempts)`.padEnd(13);
-        console.log(`Section ${item.section_number}: ${status} ${attempts} - ${item.section_type}`);
+        console.log(`${item.section_type}: ${status} ${attempts}`);
         if (item.error_message) {
           console.log(`  Error: ${item.error_message}`);
         }
