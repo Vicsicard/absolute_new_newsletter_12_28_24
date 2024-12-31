@@ -116,6 +116,16 @@ Key tables:
 - `contacts`: Contact list
 - `newsletter_contacts`: Newsletter-contact relationships
 
+## Project Status Update
+
+### Recent Improvements
+1. **OpenAI Handling**: Improved handling of OpenAI API calls with increased retries and exponential backoff. Added a 3-minute timeout for each call.
+2. **Delays**: Increased delays between sections to 15 minutes and added a 30-minute delay after errors to manage OpenAI capacity issues effectively.
+3. **Queue Initialization**: Enhanced queue initialization verification with extended retries and logging.
+4. **Error Handling**: Improved error logging and handling throughout the newsletter generation process.
+5. **New Feature**: Added support for customizable newsletter templates.
+6. **Bug Fix**: Resolved issue with duplicate newsletter generations.
+
 ## Contributing
 
 1. Fork the repository
