@@ -116,6 +116,40 @@ The newsletter application is now in production with the following features:
 - Relationships: ✅ Properly configured
 - Migrations: ✅ Up to date
 
+## Current Debugging Focus
+
+### Queue Generation System Challenges
+- 🔍 Investigating inconsistent queue initialization
+- 🐛 Debugging section generation process
+- 🚧 Identifying potential bottlenecks in OpenAI and DALL-E interactions
+
+### Specific Areas of Investigation
+1. **Queue Initialization**
+   - Verify complete queue item creation
+   - Check status tracking mechanism
+   - Ensure proper error handling
+
+2. **Section Generation**
+   - Monitor OpenAI content generation reliability
+   - Track DALL-E image generation success rate
+   - Implement more robust retry mechanisms
+
+3. **Database Interactions**
+   - Review transaction management
+   - Verify status updates for queue items
+   - Ensure data consistency across tables
+
+### Immediate Action Items
+- [ ] Enhance logging in queue generation process
+- [ ] Create more granular error tracking
+- [ ] Implement comprehensive monitoring scripts
+- [ ] Review and optimize API interaction timeouts
+
+### Potential Performance Improvements
+- Implement exponential backoff for API retries
+- Add more detailed error context
+- Create a comprehensive monitoring dashboard
+
 ## Upcoming Tasks
 1. Monitoring and Optimization
    - Add queue performance monitoring

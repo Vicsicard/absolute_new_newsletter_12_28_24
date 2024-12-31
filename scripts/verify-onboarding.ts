@@ -1,14 +1,15 @@
 import { createClient } from '@supabase/supabase-js';
 import * as dotenv from 'dotenv';
 import { join } from 'path';
-import { initializeGenerationQueue } from '../utils/newsletter';
-import type { Database } from '../types/supabase';
+import chalk from 'chalk';
+import { Database } from '../types/database';
 
 // Load environment variables
 dotenv.config({ path: join(process.cwd(), '.env.local') });
 
 if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
-  throw new Error('Missing required environment variables: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
+  console.error('Missing required environment variables');
+  process.exit(1);
 }
 
 const supabase = createClient<Database>(
@@ -22,406 +23,176 @@ const supabase = createClient<Database>(
   }
 );
 
-// ANSI color codes
+// ANSI color codes for better visibility
 const colors = {
-  reset: '\x1b[0m',
-  green: '\x1b[32m',
-  yellow: '\x1b[33m',
-  red: '\x1b[31m',
-  cyan: '\x1b[36m',
-  bold: '\x1b[1m'
+  success: '\x1b[32m',
+  error: '\x1b[31m',
+  warning: '\x1b[33m',
+  info: '\x1b[36m',
+  reset: '\x1b[0m'
 };
 
-// Utility functions for colored output
-const format = {
-  success: (text: string) => `${colors.green}${text}${colors.reset}`,
-  warning: (text: string) => `${colors.yellow}${text}${colors.reset}`,
-  error: (text: string) => `${colors.red}${text}${colors.reset}`,
-  info: (text: string) => `${colors.cyan}${text}${colors.reset}`,
-  bold: (text: string) => `${colors.bold}${text}${colors.reset}`
-};
+type QueueItem = Database['public']['Tables']['newsletter_generation_queue']['Row'];
+type Newsletter = Database['public']['Tables']['newsletters']['Row'];
+type Company = Database['public']['Tables']['companies']['Row'];
+type NewsletterSection = Database['public']['Tables']['newsletter_sections']['Row'];
 
-// Status icons with colors
-const icons = {
-  success: format.success('✅'),
-  pending: format.warning('⏳'),
-  error: format.error('❌'),
-  warning: format.warning('⚠️')
-};
-
-interface ErrorLog {
-  id: string;
-  timestamp: string;
-  error_type: string;
-  message: string;
-  stack?: string;
-  context: Record<string, any>;
+async function colorLog(color: keyof typeof colors, message: string) {
+  console.log(`${colors[color]}${message}${colors.reset}`);
 }
 
-interface QueueItem {
-  id: string;
-  newsletter_id: string;
-  section_type: string;
-  section_number: number;
-  status: 'pending' | 'in_progress' | 'completed' | 'failed';
-  attempts: number;
-  error_message: string | null;
-  created_at: string;
-  updated_at: string;
-  last_error?: string;
-  error_count?: number;
-  last_attempt_at?: string;
-}
+async function getCompanyAndNewsletter(newsletterId: string): Promise<{ company: Company; newsletter: Newsletter } | null> {
+  const { data: newsletter, error: newsletterError } = await supabase
+    .from('newsletters')
+    .select('*, companies(*)')
+    .eq('id', newsletterId)
+    .single();
 
-interface OnboardingVerification {
-  company: {
-    exists: boolean;
-    id?: string;
-    created_at?: string;
-  };
-  newsletter: {
-    exists: boolean;
-    id?: string;
-    created_at?: string;
-    draft_status?: string;
-    draft_sent_at?: string;
-  };
-  sections: {
-    exists: boolean;
-    count: number;
-    created_at?: string;
-    allGenerated: boolean;
-  };
-  queue: {
-    items: number;
-    completed: number;
-    failed: number;
-    inProgress: number;
-    errors: {
-      count: number;
-      lastError?: string;
-      lastErrorTime?: string;
-    };
-  };
-  errors: {
-    recent: ErrorLog[];
-    count: number;
+  if (newsletterError || !newsletter) {
+    await colorLog('error', `Error fetching newsletter: ${newsletterError?.message || 'Not found'}`);
+    return null;
+  }
+
+  return {
+    newsletter: newsletter,
+    company: newsletter.companies as Company
   };
 }
 
-interface Section {
-  id: string;
-  newsletter_id: string;
-  content: string | null;
-  image_url: string | null;
-  created_at: string;
-}
-
-interface Company {
-  id: string;
-  contact_email: string;
-  created_at: string;
-}
-
-interface Newsletter {
-  id: string;
-  company_id: string;
-  created_at: string;
-  draft_status: string;
-  draft_sent_at: string;
-}
-
-interface NewsletterSection {
-  id: string;
-  newsletter_id: string;
-  content: string | null;
-  image_url: string | null;
-  created_at: string;
-}
-
-async function getRecentErrors(newsletterId: string): Promise<ErrorLog[]> {
-  const { data: errorLogs, error } = await supabase
-    .from('error_logs')
+async function getNewsletterSections(newsletterId: string): Promise<NewsletterSection[]> {
+  const { data: sections, error } = await supabase
+    .from('newsletter_sections')
     .select('*')
-    .filter('context->newsletter_id', 'eq', newsletterId)
-    .order('timestamp', { ascending: false })
-    .limit(5);
+    .eq('newsletter_id', newsletterId)
+    .order('section_number', { ascending: true });
 
   if (error) {
-    console.error('Error fetching error logs:', error);
+    await colorLog('error', `Error fetching sections: ${error.message}`);
     return [];
   }
 
-  return errorLogs || [];
+  return sections || [];
 }
 
-async function verifyOnboarding(companyEmail: string): Promise<OnboardingVerification> {
-  // Check company
-  const { data: companies, error: companyError } = await supabase
-    .from('companies')
-    .select('*')
-    .eq('contact_email', companyEmail)
-    .order('created_at', { ascending: false })
-    .limit(1);
-
-  if (companyError) {
-    throw new Error(`Error checking company: ${companyError.message}`);
-  }
-
-  const company = companies?.[0];
-  if (!company) {
-    return {
-      company: { exists: false },
-      newsletter: { exists: false },
-      sections: { exists: false, count: 0, allGenerated: false },
-      queue: { items: 0, completed: 0, failed: 0, inProgress: 0, errors: { count: 0 } },
-      errors: { recent: [], count: 0 }
-    };
-  }
-
-  // Check newsletter
-  const { data: newsletters, error: newsletterError } = await supabase
-    .from('newsletters')
-    .select('*')
-    .eq('company_id', company.id)
-    .order('created_at', { ascending: false })
-    .limit(1);
-
-  if (newsletterError) {
-    throw new Error(`Error checking newsletter: ${newsletterError.message}`);
-  }
-
-  const newsletter = newsletters?.[0];
-  if (!newsletter) {
-    return {
-      company: { exists: true, id: company.id, created_at: company.created_at },
-      newsletter: { exists: false },
-      sections: { exists: false, count: 0, allGenerated: false },
-      queue: { items: 0, completed: 0, failed: 0, inProgress: 0, errors: { count: 0 } },
-      errors: { recent: [], count: 0 }
-    };
-  }
-
-  // Check sections
-  const { data: sections, error: sectionsError } = await supabase
-    .from('newsletter_sections')
-    .select('*')
-    .eq('newsletter_id', newsletter.id)
-    .order('created_at', { ascending: false });
-
-  if (sectionsError) {
-    throw new Error(`Error checking sections: ${sectionsError.message}`);
-  }
-
-  // Check queue status and errors
-  const { data: queueItems, error: queueError } = await supabase
+async function getQueueItems(newsletterId: string): Promise<QueueItem[]> {
+  const { data: queueItems, error } = await supabase
     .from('newsletter_generation_queue')
     .select('*')
-    .eq('newsletter_id', newsletter.id);
+    .eq('newsletter_id', newsletterId)
+    .order('section_number', { ascending: true });
 
-  if (queueError) {
-    throw new Error(`Error checking queue: ${queueError.message}`);
+  if (error) {
+    await colorLog('error', `Error fetching queue items: ${error.message}`);
+    return [];
   }
 
-  // Get recent errors
-  const recentErrors = await getRecentErrors(newsletter.id);
-
-  // Initialize queue if it's empty
-  if (!queueItems || queueItems.length === 0) {
-    console.log('Queue is empty, initializing...');
-    try {
-      await initializeGenerationQueue(newsletter.id, supabase);
-      console.log('Queue initialized successfully');
-      
-      // Fetch updated queue status
-      const { data: updatedQueue, error: updateError } = await supabase
-        .from('newsletter_generation_queue')
-        .select('*')
-        .eq('newsletter_id', newsletter.id);
-        
-      if (updateError) {
-        throw new Error(`Error checking updated queue: ${updateError.message}`);
-      }
-      
-      queueItems = updatedQueue;
-    } catch (error) {
-      console.error('Failed to initialize queue:', error);
-      throw new Error(`Queue initialization failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  }
-
-  // Calculate queue statistics
-  const completedItems = (queueItems as QueueItem[] || []).filter(item => item.status === 'completed').length;
-  const failedItems = (queueItems as QueueItem[] || []).filter(item => item.status === 'failed').length;
-  const inProgressItems = (queueItems as QueueItem[] || []).filter(item => item.status === 'in_progress').length;
-  
-  // Calculate error statistics
-  const itemsWithErrors = queueItems?.filter(item => item.error_count && item.error_count > 0) || [];
-  const totalErrors = itemsWithErrors.reduce((sum, item) => sum + (item.error_count || 0), 0);
-  const lastErrorItem = itemsWithErrors.sort((a, b) => 
-    new Date(b.last_attempt_at || 0).getTime() - new Date(a.last_attempt_at || 0).getTime()
-  )[0];
-
-  return {
-    company: {
-      exists: true,
-      id: company.id,
-      created_at: company.created_at
-    },
-    newsletter: {
-      exists: true,
-      id: newsletter.id,
-      created_at: newsletter.created_at,
-      draft_status: newsletter.draft_status,
-      draft_sent_at: newsletter.draft_sent_at
-    },
-    sections: {
-      exists: sections.length > 0,
-      count: sections.length,
-      created_at: sections[0]?.created_at,
-      allGenerated: (sections as NewsletterSection[]).every(s => s.content && s.image_url)
-    },
-    queue: {
-      items: queueItems?.length || 0,
-      completed: completedItems,
-      failed: failedItems,
-      inProgress: inProgressItems,
-      errors: {
-        count: totalErrors,
-        lastError: lastErrorItem?.last_error,
-        lastErrorTime: lastErrorItem?.last_attempt_at
-      }
-    },
-    errors: {
-      recent: recentErrors,
-      count: recentErrors.length
-    }
-  };
+  return queueItems || [];
 }
 
-function formatDuration(startTime: string): string {
-  const duration = new Date().getTime() - new Date(startTime).getTime();
-  const minutes = Math.floor(duration / 60000);
-  const seconds = Math.floor((duration % 60000) / 1000);
-  return `${minutes}m ${seconds}s`;
-}
-
-async function monitorProcess(email: string) {
-  console.log('\nStarting monitoring process for email:', format.info(email));
-  console.log('This may take several minutes...\n');
-
-  let attempt = 0;
-  const maxAttempts = 60; // 30 minutes (30 seconds * 60)
-  const startTime = new Date().toISOString();
-
-  while (attempt < maxAttempts) {
-    attempt++;
-    console.clear(); // Clear console for cleaner output
-    console.log(format.bold(`\nMonitoring Onboarding Process (Attempt ${attempt}/${maxAttempts})`));
-    console.log(format.info(`Running time: ${formatDuration(startTime)}`));
-    console.log('----------------------------------------\n');
-
-    const status = await verifyOnboarding(email);
-
-    // Company Status
-    console.log(format.bold('1. Company Creation:'));
-    console.log(`   Status: ${status.company.exists ? icons.success : icons.pending} ${status.company.exists ? 'Created' : 'Pending'}`);
-    if (status.company.created_at) {
-      console.log(`   Created At: ${format.info(new Date(status.company.created_at).toLocaleString())}`);
-    }
-    console.log();
-
-    // Newsletter Status
-    console.log(format.bold('2. Newsletter Creation:'));
-    console.log(`   Status: ${status.newsletter.exists ? icons.success : icons.pending} ${status.newsletter.exists ? 'Created' : 'Pending'}`);
-    if (status.newsletter.created_at) {
-      console.log(`   Created At: ${format.info(new Date(status.newsletter.created_at).toLocaleString())}`);
-    }
-    console.log();
-
-    // Sections Status
-    console.log(format.bold('3. Newsletter Sections:'));
-    console.log(`   Status: ${status.sections.exists ? icons.success : icons.pending} ${status.sections.exists ? 'Created' : 'Pending'}`);
-    console.log(`   Count: ${format.info(`${status.sections.count}/3`)}`);
-    console.log(`   Content Generated: ${status.sections.allGenerated ? icons.success : icons.pending} ${status.sections.allGenerated ? 'Complete' : 'In Progress'}`);
-    console.log();
-
-    // Queue Status
-    console.log(format.bold('4. Generation Queue:'));
-    console.log(`   Total Items: ${format.info(status.queue.items.toString())}`);
-    console.log(`   Completed: ${format.success(status.queue.completed.toString())}`);
-    console.log(`   In Progress: ${format.warning(status.queue.inProgress.toString())}`);
-    console.log(`   Failed: ${status.queue.failed > 0 ? format.error(status.queue.failed.toString()) : '0'}`);
-    
-    if (status.queue.errors.count > 0) {
-      console.log(format.error('\n   Error Information:'));
-      console.log(`   - Total Errors: ${format.error(status.queue.errors.count.toString())}`);
-      if (status.queue.errors.lastError) {
-        console.log(`   - Last Error: ${format.error(status.queue.errors.lastError)}`);
-        console.log(`   - Last Error Time: ${format.info(new Date(status.queue.errors.lastErrorTime!).toLocaleString())}`);
-      }
-    }
-    console.log();
-
-    // Recent Errors
-    if (status.errors.recent.length > 0) {
-      console.log(format.bold('5. Recent Errors:'));
-      status.errors.recent.forEach((error, index) => {
-        console.log(format.error(`   ${index + 1}. ${error.error_type}: ${error.message}`));
-        console.log(`      Time: ${format.info(new Date(error.timestamp).toLocaleString())}`);
-        if (error.context) {
-          console.log(`      Context: ${format.info(JSON.stringify(error.context, null, 2))}`);
-        }
-      });
-      console.log();
-    }
-
-    // Draft Email Status
-    console.log(format.bold('6. Draft Email:'));
-    console.log(`   Status: ${format.info(status.newsletter.draft_status || 'pending')}`);
-    console.log(`   Sent At: ${status.newsletter.draft_sent_at ? 
-      format.info(new Date(status.newsletter.draft_sent_at).toLocaleString()) : format.warning('Not sent yet')}`);
-
-    // Check if process is complete
-    if (
-      status.sections.allGenerated &&
-      status.queue.completed === status.queue.items &&
-      status.newsletter.draft_sent_at
-    ) {
-      console.log(format.success('\n✅ Onboarding process completed successfully!'));
-      break;
-    }
-
-    // Check for fatal errors
-    if (status.queue.failed === status.queue.items) {
-      console.log(format.error('\n❌ Process failed - all queue items have failed'));
-      console.log(format.error('Please check the error logs above for details'));
-      break;
-    }
-
-    // Wait before next check
-    await new Promise(resolve => setTimeout(resolve, 30000)); // 30 seconds
-  }
-
-  if (attempt >= maxAttempts) {
-    console.log(format.warning('\n⚠️ Monitoring timed out after 30 minutes'));
-    console.log('The process may still be running. Please check the status later.');
-  }
-}
-
-async function main() {
+async function monitorProgress() {
   try {
-    const email = process.argv[2];
-    if (!email) {
-      console.error('Please provide an email address as an argument');
-      process.exit(1);
-    }
+    while (true) {  // Keep monitoring until complete
+      // Get the most recent newsletter
+      const { data: newsletters, error: newsletterError } = await supabase
+        .from('newsletters')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(1);
 
-    await monitorProcess(email);
+      if (newsletterError || !newsletters || newsletters.length === 0) {
+        await colorLog('error', 'No newsletters found or error fetching newsletters');
+        return;
+      }
+
+      const newsletter = newsletters[0];
+      const data = await getCompanyAndNewsletter(newsletter.id);
+      
+      if (!data) {
+        await colorLog('error', 'Failed to fetch newsletter details');
+        return;
+      }
+
+      const { company } = data;
+      const sections = await getNewsletterSections(newsletter.id);
+      const queueItems = await getQueueItems(newsletter.id);
+
+      console.clear();
+      await colorLog('info', '\n=== Newsletter Generation Status ===');
+      await colorLog('info', `Company: ${company.company_name}`);
+      await colorLog('info', `Contact Email: ${company.contact_email}`);
+      await colorLog('info', `Newsletter ID: ${newsletter.id}`);
+      await colorLog('info', `Status: ${newsletter.status}\n`);
+
+      // Display sections status
+      await colorLog('info', '=== Sections Status ===');
+      for (const section of sections) {
+        const queueItem = queueItems.find(q => q.section_number === section.section_number);
+        const status = queueItem?.status || 'unknown';
+        const hasContent = !!section.content;
+        const hasImage = !!section.image_url;
+
+        const sectionInfo = `Section ${section.section_number}: ${section.title || 'Untitled'}`;
+        const contentStatus = hasContent ? '✓ Content' : '✗ Content';
+        const imageStatus = hasImage ? '✓ Image' : '✗ Image';
+        
+        switch (status) {
+          case 'completed':
+            await colorLog('success', `✓ ${sectionInfo}`);
+            await colorLog('success', `  ${contentStatus} | ${imageStatus}`);
+            break;
+          case 'failed':
+            await colorLog('error', `✗ ${sectionInfo}`);
+            await colorLog('error', `  ${contentStatus} | ${imageStatus}`);
+            if (queueItem?.error_message) {
+              await colorLog('error', `  Error: ${queueItem.error_message}`);
+            }
+            break;
+          case 'in_progress':
+            await colorLog('info', `⟳ ${sectionInfo}`);
+            await colorLog('info', `  ${contentStatus} | ${imageStatus}`);
+            break;
+          default:
+            await colorLog('warning', `○ ${sectionInfo}`);
+            await colorLog('warning', `  ${contentStatus} | ${imageStatus}`);
+        }
+      }
+
+      // Check if everything is complete
+      const allSectionsComplete = sections.length === 3 && 
+        sections.every(s => s.content && s.image_url);
+      const allQueueItemsComplete = queueItems.every(q => q.status === 'completed');
+
+      if (allSectionsComplete && allQueueItemsComplete) {
+        await colorLog('success', '\n✓ Newsletter generation completed successfully!');
+        await colorLog('info', `\nReady to send draft to: ${company.contact_email}`);
+        break;  // Exit the monitoring loop
+      } else {
+        await colorLog('warning', '\n⟳ Newsletter generation still in progress...');
+        
+        // Show what's missing
+        const missingSections = 3 - sections.length;
+        if (missingSections > 0) {
+          await colorLog('warning', `  Missing ${missingSections} section(s)`);
+        }
+        
+        const incompleteContent = sections.filter(s => !s.content).length;
+        if (incompleteContent > 0) {
+          await colorLog('warning', `  ${incompleteContent} section(s) missing content`);
+        }
+        
+        const incompleteImages = sections.filter(s => !s.image_url).length;
+        if (incompleteImages > 0) {
+          await colorLog('warning', `  ${incompleteImages} section(s) missing images`);
+        }
+      }
+
+      // Wait before next check
+      await new Promise(resolve => setTimeout(resolve, 5000));  // Check every 5 seconds
+    }
   } catch (error) {
-    console.error('Error:', error);
-    process.exit(1);
+    await colorLog('error', `Monitoring error: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
-main();
+// Start monitoring
+monitorProgress();

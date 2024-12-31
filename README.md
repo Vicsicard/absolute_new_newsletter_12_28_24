@@ -116,6 +116,23 @@ Key tables:
 - `contacts`: Contact list
 - `newsletter_contacts`: Newsletter-contact relationships
 
+## Current Development Status
+
+### Known Issues
+- Queue generation process requires further debugging
+- Intermittent failures in section and image generation
+- Need to improve error handling and retry mechanisms
+
+### Upcoming Improvements
+- Enhanced logging for queue generation
+- More robust error tracking
+- Implement more granular status monitoring
+
+### Debugging Notes
+- Verify queue initialization process
+- Check OpenAI and DALL-E API interaction
+- Review database transaction management
+
 ## Project Status Update
 
 ### Recent Improvements
