@@ -5,20 +5,16 @@ import { join } from 'path';
 // Load environment variables from .env.local
 dotenv.config({ path: join(process.cwd(), '.env.local') });
 
-if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
-  throw new Error('Missing required environment variables');
+// Ensure required environment variables are present
+if (!process.env.SUPABASE_URL) {
+  throw new Error('SUPABASE_URL environment variable is required');
+}
+if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+  throw new Error('SUPABASE_SERVICE_ROLE_KEY environment variable is required');
 }
 
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY,
-  {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false
-    }
-  }
-);
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 interface QueueItem {
   id: string;
@@ -59,7 +55,16 @@ interface QueueStats {
 async function checkQueue() {
   try {
     // Get all active newsletters (not in final states)
-    const { data: activeNewsletters, error: newsletterError } = await supabase
+    const { data: activeNewsletters, error: newsletterError } = await createClient(
+      supabaseUrl,
+      supabaseServiceRoleKey,
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false
+        }
+      }
+    )
       .from('newsletters')
       .select('*')
       .not('status', 'eq', 'sent')
@@ -75,7 +80,16 @@ async function checkQueue() {
 
     for (const newsletter of activeNewsletters as Newsletter[]) {
       // Get queue items for this newsletter
-      const { data: queueItems, error: queueError } = await supabase
+      const { data: queueItems, error: queueError } = await createClient(
+        supabaseUrl,
+        supabaseServiceRoleKey,
+        {
+          auth: {
+            autoRefreshToken: false,
+            persistSession: false
+          }
+        }
+      )
         .from('newsletter_generation_queue')
         .select('*')
         .eq('newsletter_id', newsletter.id)
@@ -120,8 +134,8 @@ async function checkQueue() {
 
 async function getSupabaseAdmin() {
   const supabaseAdmin = createClient(
-    process.env.SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_ROLE_KEY,
+    supabaseUrl,
+    supabaseServiceRoleKey,
     {
       auth: {
         autoRefreshToken: false,
