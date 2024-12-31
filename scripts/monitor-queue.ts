@@ -1,16 +1,15 @@
-import { createClient } from '@supabase/supabase-js'
-import type { Database } from '@/types/database'
-import dotenv from 'dotenv'
-import { join } from 'path'
+const { createClient } = require('@supabase/supabase-js');
+const dotenv = require('dotenv');
+const { join } = require('path');
 
 // Load environment variables from .env.local
-dotenv.config({ path: join(process.cwd(), '.env.local') })
+dotenv.config({ path: join(process.cwd(), '.env.local') });
 
 if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
   throw new Error('Missing required environment variables')
 }
 
-const supabase = createClient<Database>(
+const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY,
   {
@@ -21,8 +20,22 @@ const supabase = createClient<Database>(
   }
 )
 
-type QueueItem = Database['public']['Tables']['newsletter_generation_queue']['Row']
-type Newsletter = Database['public']['Tables']['newsletters']['Row']
+type QueueItem = {
+  id: number
+  newsletter_id: number
+  section_number: number
+  status: string
+  attempts: number
+  section_type: string
+  error_message: string | null
+}
+
+type Newsletter = {
+  id: number
+  status: string
+  subject: string
+  created_at: Date
+}
 
 async function monitorQueue() {
   try {
@@ -70,10 +83,10 @@ async function monitorQueue() {
 
       // Calculate statistics
       const total = queueItems.length;
-      const completed = queueItems.filter(item => item.status === 'completed').length;
-      const failed = queueItems.filter(item => item.status === 'failed').length;
-      const inProgress = queueItems.filter(item => item.status === 'in_progress').length;
-      const pending = queueItems.filter(item => item.status === 'pending').length;
+      const completed = queueItems.filter((item: QueueItem) => item.status === 'completed').length;
+      const failed = queueItems.filter((item: QueueItem) => item.status === 'failed').length;
+      const inProgress = queueItems.filter((item: QueueItem) => item.status === 'in_progress').length;
+      const pending = queueItems.filter((item: QueueItem) => item.status === 'pending').length;
 
       console.log(`Progress: ${completed}/${total} sections completed`);
       console.log(`- Completed: ${completed}`);
@@ -83,7 +96,7 @@ async function monitorQueue() {
 
       // Show detailed status for each section
       console.log('\nDetailed Section Status:');
-      queueItems.forEach(item => {
+      queueItems.forEach((item: QueueItem) => {
         const status = item.status.toUpperCase().padEnd(11);
         const attempts = `(${item.attempts} attempts)`.padEnd(13);
         console.log(`Section ${item.section_number}: ${status} ${attempts} - ${item.section_type}`);

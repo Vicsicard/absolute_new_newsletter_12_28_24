@@ -33,7 +33,9 @@
     "zod": "^3.22.4"
   },
   "devDependencies": {
+    "@types/dotenv": "^6.1.1",
     "@types/formidable": "^3.4.5",
+    "dotenv": "^16.4.7",
     "encoding": "^0.1.13",
     "supabase": "^2.1.1",
     "ts-node": "^10.9.2",

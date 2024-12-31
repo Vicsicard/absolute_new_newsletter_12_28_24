@@ -399,6 +399,8 @@ export async function generateNewsletter(
 
         if (existingSection) {
           console.log(`Section ${config.sectionNumber} already exists, skipping...`);
+          // Update queue item status to completed since section already exists
+          await updateQueueItemStatus(supabaseAdmin, newsletterId, sectionType, 'completed');
           continue;
         }
 
