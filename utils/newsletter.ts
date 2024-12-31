@@ -331,7 +331,25 @@ export async function generateNewsletter(
     }
 
     // Initialize generation queue
+    console.log('Starting queue initialization...');
     await initializeGenerationQueue(newsletterId, supabaseAdmin);
+    
+    // Verify queue initialization
+    const { data: initialQueue, error: verifyError } = await supabaseAdmin
+      .from('newsletter_generation_queue')
+      .select('*')
+      .eq('newsletter_id', newsletterId)
+      .order('section_number', { ascending: true });
+
+    if (verifyError) {
+      console.error('Error verifying initial queue:', verifyError);
+    } else {
+      console.log('Initial queue state:', initialQueue?.map(item => ({
+        section: item.section_number,
+        type: item.section_type,
+        status: item.status
+      })));
+    }
 
     const sections: NewsletterSectionInsert[] = [];
 
