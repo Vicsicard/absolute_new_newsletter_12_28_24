@@ -193,7 +193,17 @@ async function initializeGenerationQueue(
     }
 
     console.log('Queue verification complete. Current queue state:', 
-      verifyQueue?.map(item => ({
+      verifyQueue?.map((item: {
+        id: string;
+        newsletter_id: string;
+        section_type: string;
+        section_number: number;
+        status: 'pending' | 'in_progress' | 'completed' | 'failed';
+        attempts: number;
+        error_message?: string | null;
+        created_at: string;
+        updated_at: string;
+      }) => ({
         section: item.section_number,
         type: item.section_type,
         status: item.status
