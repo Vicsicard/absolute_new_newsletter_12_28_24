@@ -4,7 +4,6 @@ import { NewsletterWithCompany, NewsletterSection, NewsletterSectionStatus } fro
 import { getSupabaseAdmin } from './supabase-admin';
 import { APIError } from './errors';
 import { generateImage } from './image';
-import { randomUUID } from 'crypto';
 
 // Use Supabase types
 type NewsletterSectionInsert = Database['public']['Tables']['newsletter_sections']['Insert'];
@@ -155,7 +154,6 @@ async function initializeGenerationQueue(
     console.log('Creating new queue items with config:', SECTION_CONFIG);
     const timestamp = new Date().toISOString();
     const queueItems = Object.entries(SECTION_CONFIG).map(([type, config]) => ({
-      id: randomUUID(), // Primary key
       newsletter_id: newsletterId,
       section_type: type,
       section_number: config.sectionNumber,
@@ -173,7 +171,8 @@ async function initializeGenerationQueue(
       const { error: insertError } = await supabaseAdmin
         .from('newsletter_generation_queue')
         .upsert(item, {
-          onConflict: 'newsletter_id,section_type'
+          onConflict: 'newsletter_id,section_type',
+          ignoreDuplicates: false
         });
 
       if (insertError) {
@@ -332,22 +331,41 @@ export async function generateNewsletter(
     console.log('Starting queue initialization...');
     await initializeGenerationQueue(newsletterId, supabaseAdmin);
     
-    // Verify queue initialization
-    const { data: initialQueue, error: verifyError } = await supabaseAdmin
-      .from('newsletter_generation_queue')
-      .select('*')
-      .eq('newsletter_id', newsletterId)
-      .order('section_number', { ascending: true });
-
-    if (verifyError) {
-      console.error('Error verifying initial queue:', verifyError);
-    } else {
-      console.log('Initial queue state:', initialQueue?.map(item => ({
-        section: item.section_number,
-        type: item.section_type,
-        status: item.status
-      })));
+    // Verify queue initialization with retries
+    let initialQueue = null;
+    let verifyError = null;
+    let retries = 3;
+    
+    while (retries > 0) {
+      const result = await supabaseAdmin
+        .from('newsletter_generation_queue')
+        .select('*')
+        .eq('newsletter_id', newsletterId)
+        .order('section_number', { ascending: true });
+      
+      if (!result.error && result.data?.length === Object.keys(SECTION_CONFIG).length) {
+        initialQueue = result.data;
+        break;
+      }
+      
+      verifyError = result.error;
+      retries--;
+      if (retries > 0) {
+        console.log(`Queue verification attempt failed, retrying in 1 second... (${retries} attempts left)`);
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
     }
+
+    if (!initialQueue) {
+      console.error('Error verifying initial queue:', verifyError);
+      throw new APIError('Failed to initialize generation queue', 500);
+    }
+
+    console.log('Initial queue state:', initialQueue.map(item => ({
+      section: item.section_number,
+      type: item.section_type,
+      status: item.status
+    })));
 
     const sections: NewsletterSectionInsert[] = [];
 
