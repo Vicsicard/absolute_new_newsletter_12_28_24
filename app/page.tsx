@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, FormEvent, useRef } from 'react';
+import { useState, FormEvent, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { validateForm } from '@/utils/validation';
 import LoadingModal from '@/components/LoadingModal';
@@ -15,11 +15,47 @@ export default function Home() {
   const [success, setSuccess] = useState<string | null>(null);
   const [email, setEmail] = useState('');
   const [formErrors, setFormErrors] = useState<FormErrors>({});
+  const [hasSubmitted, setHasSubmitted] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
+
+  // Check for previous submission on component mount
+  useEffect(() => {
+    const hasAlreadySubmitted = localStorage.getItem('newsletterSubmitted');
+    if (hasAlreadySubmitted) {
+      setHasSubmitted(true);
+    }
+
+    // Prevent back navigation
+    window.history.pushState(null, '', window.location.href);
+    const handlePopState = () => {
+      window.history.pushState(null, '', window.location.href);
+    };
+    window.addEventListener('popstate', handlePopState);
+
+    // Prevent refresh
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasAlreadySubmitted) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, []);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     
+    // Check if already submitted
+    if (hasSubmitted) {
+      setError('You have already submitted a newsletter request. Only one submission is allowed.');
+      return;
+    }
+
     // Reset all states
     setIsLoading(true);
     setError(null);
@@ -28,8 +64,6 @@ export default function Home() {
 
     try {
       const formData = new FormData(e.target as HTMLFormElement);
-      console.log('Form data before validation:', Object.fromEntries(formData));
-
       const errors = validateForm(formData);
       if (Object.keys(errors).length > 0) {
         setFormErrors(errors);
@@ -37,23 +71,25 @@ export default function Home() {
         throw new Error('Please fix the form errors');
       }
 
-      console.log('Sending request to /api/onboarding...');
       const response = await fetch('/api/onboarding', {
         method: 'POST',
         body: formData,
       });
 
-      console.log('Response received:', response.status);
       const data = await response.json();
-      console.log('Response data:', data);
 
       if (!response.ok) {
         throw new Error(data.message || 'Failed to submit form');
       }
 
+      // Mark as submitted in localStorage
+      localStorage.setItem('newsletterSubmitted', 'true');
+      setHasSubmitted(true);
+
       const formDataObj = Object.fromEntries(formData);
       const contactEmail = formDataObj.contact_email as string;
       setSuccess(`Newsletter setup completed! Your draft newsletter will be emailed to ${contactEmail} within 24 hours. Please check your spam folder if you don't see it in your inbox.`);
+      
       if (formRef.current) {
         formRef.current.reset();
       }
@@ -69,6 +105,27 @@ export default function Home() {
     setError(null);
     setSuccess(null);
   };
+
+  // Show submitted state if already submitted
+  if (hasSubmitted && !isLoading && !success) {
+    return (
+      <div className="min-h-screen bg-[#3366FF] py-6 flex flex-col justify-center">
+        <div className="relative py-3 sm:max-w-xl sm:mx-auto">
+          <div className="relative px-4 py-10 bg-white mx-8 md:mx-0 shadow-2xl rounded-2xl sm:p-10">
+            <div className="max-w-md mx-auto text-center">
+              <h2 className="text-3xl font-bold mb-4 text-gray-900">Thank You!</h2>
+              <p className="text-lg text-gray-600 mb-6">
+                Your newsletter is being generated. Please check your email for the draft within 24 hours.
+              </p>
+              <p className="text-sm text-gray-500">
+                Note: Only one newsletter submission is allowed per user.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#3366FF] py-6 flex flex-col justify-center">
