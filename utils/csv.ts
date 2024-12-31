@@ -1,6 +1,6 @@
 import { parse } from 'csv-parse'
 import { Readable } from 'stream'
-import { Database } from '@/types/supabase'
+import { Database } from '@/types/database'
 
 type ContactInsert = Database['public']['Tables']['contacts']['Insert']
 
