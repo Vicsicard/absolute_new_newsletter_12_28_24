@@ -122,6 +122,35 @@ export interface Database {
           updated_at?: string | null;
         };
       };
+      compiled_newsletters: {
+        Row: {
+          id: string;
+          newsletter_id: string;
+          compiled_content: string;
+          compiled_status: CompiledNewsletterStatus;
+          error_message: string | null;
+          created_at: string | null;
+          updated_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          newsletter_id: string;
+          compiled_content: string;
+          compiled_status?: CompiledNewsletterStatus;
+          error_message?: string | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          newsletter_id?: string;
+          compiled_content?: string;
+          compiled_status?: CompiledNewsletterStatus;
+          error_message?: string | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+      };
       image_generation_history: {
         Row: {
           id: string;
