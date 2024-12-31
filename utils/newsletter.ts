@@ -114,14 +114,16 @@ async function waitForImageRateLimit() {
   imageGenerationTimestamps.push(now);
 }
 
-async function initializeGenerationQueue(
+export async function initializeGenerationQueue(
   newsletterId: string,
   supabaseAdmin: SupabaseClient<Database>
 ): Promise<void> {
   console.log('Starting queue initialization for newsletter:', newsletterId);
+  console.log('Current timestamp:', new Date().toISOString());
   
   try {
     // First, check existing queue items
+    console.log('Checking for existing queue items...');
     const { data: existingQueue, error: checkError } = await supabaseAdmin
       .from('newsletter_generation_queue')
       .select('*')
@@ -129,10 +131,24 @@ async function initializeGenerationQueue(
 
     if (checkError) {
       console.error('Error checking existing queue:', checkError);
+      console.error('Error details:', {
+        code: checkError.code,
+        message: checkError.message,
+        details: checkError.details,
+        hint: checkError.hint
+      });
       throw new APIError('Failed to check existing queue', 500);
     }
 
     console.log('Existing queue items:', existingQueue?.length || 0);
+    if (existingQueue?.length > 0) {
+      console.log('Existing queue state:', existingQueue.map(item => ({
+        type: item.section_type,
+        status: item.status,
+        attempts: item.attempts,
+        error: item.error_message
+      })));
+    }
 
     // Delete existing queue items if any
     if (existingQueue?.length > 0) {
@@ -144,6 +160,12 @@ async function initializeGenerationQueue(
 
       if (deleteError) {
         console.error('Error deleting existing queue items:', deleteError);
+        console.error('Delete error details:', {
+          code: deleteError.code,
+          message: deleteError.message,
+          details: deleteError.details,
+          hint: deleteError.hint
+        });
         throw new APIError('Failed to clear existing queue items', 500);
       }
       console.log('Successfully deleted existing queue items');
@@ -164,9 +186,15 @@ async function initializeGenerationQueue(
       updated_at: timestamp
     }));
 
+    console.log('Preparing to insert queue items:', queueItems.map(item => ({
+      type: item.section_type,
+      number: item.section_number
+    })));
+
     // Insert new queue items one by one to ensure they all get created
     console.log('Inserting new queue items...');
     for (const item of queueItems) {
+      console.log(`Inserting queue item for section ${item.section_number} (${item.section_type})...`);
       const { error: insertError } = await supabaseAdmin
         .from('newsletter_generation_queue')
         .upsert(item, {
@@ -175,13 +203,20 @@ async function initializeGenerationQueue(
         });
 
       if (insertError) {
-        console.error('Error inserting queue item:', insertError);
+        console.error(`Error inserting queue item for section ${item.section_number}:`, insertError);
+        console.error('Insert error details:', {
+          code: insertError.code,
+          message: insertError.message,
+          details: insertError.details,
+          hint: insertError.hint
+        });
         throw new APIError(`Failed to initialize queue item for section ${item.section_number}`, 500);
       }
       console.log(`Successfully created queue item for section ${item.section_number}`);
     }
 
     // Verify queue initialization
+    console.log('Verifying queue initialization...');
     const { data: verifyQueue, error: verifyError } = await supabaseAdmin
       .from('newsletter_generation_queue')
       .select('*')
@@ -190,6 +225,12 @@ async function initializeGenerationQueue(
 
     if (verifyError) {
       console.error('Error verifying queue:', verifyError);
+      console.error('Verify error details:', {
+        code: verifyError.code,
+        message: verifyError.message,
+        details: verifyError.details,
+        hint: verifyError.hint
+      });
       throw new APIError('Failed to verify queue initialization', 500);
     }
 
@@ -198,16 +239,26 @@ async function initializeGenerationQueue(
       throw new APIError('Queue initialization failed: No items created', 500);
     }
 
+    if (verifyQueue.length !== Object.keys(SECTION_CONFIG).length) {
+      console.error('Queue verification failed: Incorrect number of items created', {
+        expected: Object.keys(SECTION_CONFIG).length,
+        actual: verifyQueue.length
+      });
+      throw new APIError('Queue initialization failed: Incorrect number of items', 500);
+    }
+
     console.log('Queue verification complete. Current queue state:', 
       verifyQueue.map((item: QueueItem) => ({
         section: item.section_number,
         type: item.section_type,
-        status: item.status
+        status: item.status,
+        created: item.created_at
       }))
     );
 
   } catch (error) {
     console.error('Error in initializeGenerationQueue:', error);
+    console.error('Full error object:', JSON.stringify(error, null, 2));
     console.error('Stack trace:', error instanceof Error ? error.stack : 'No stack trace');
     throw new APIError(
       `Failed to initialize generation queue: ${error instanceof Error ? error.message : 'Unknown error'}`,

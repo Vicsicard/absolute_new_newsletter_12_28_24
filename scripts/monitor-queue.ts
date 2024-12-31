@@ -50,7 +50,8 @@ async function monitorQueue() {
     const { data: activeNewsletters, error: newsletterError } = await supabase
       .from('newsletters')
       .select('*')
-      .not('status', 'in', ['sent', 'failed'])
+      .neq('status', 'sent')
+      .neq('status', 'failed')
       .order('created_at', { ascending: false });
 
     if (newsletterError) {
@@ -71,49 +72,51 @@ async function monitorQueue() {
         .from('newsletter_generation_queue')
         .select('*')
         .eq('newsletter_id', newsletter.id)
-        .order('section_number', { ascending: true });
+        .order('section_type', { ascending: true });
 
       if (queueError) {
-        console.error(`Error fetching queue items for newsletter ${newsletter.id}:`, queueError);
+        console.error(`Error fetching queue for newsletter ${newsletter.id}:`, queueError);
         continue;
       }
 
-      console.log(`\nNewsletter ID: ${newsletter.id}`);
-      console.log(`Status: ${newsletter.status}`);
-      console.log(`Subject: ${newsletter.subject}`);
-      console.log('\nQueue Status:');
-      
       if (!queueItems || queueItems.length === 0) {
-        console.log('No queue items found');
+        console.log(`No queue items found for newsletter ${newsletter.id}`);
         continue;
       }
+
+      console.log(`Newsletter: ${newsletter.id}`);
+      console.log(`Created: ${new Date(newsletter.created_at).toLocaleString()}`);
+      console.log(`Status: ${newsletter.status.toUpperCase()}`);
 
       // Calculate statistics
       const total = queueItems.length;
-      const completed = queueItems.filter((item: QueueItem) => item.status === 'completed').length;
-      const failed = queueItems.filter((item: QueueItem) => item.status === 'failed').length;
-      const inProgress = queueItems.filter((item: QueueItem) => item.status === 'in_progress').length;
-      const pending = queueItems.filter((item: QueueItem) => item.status === 'pending').length;
+      const completed = queueItems.filter((item: any) => item.status === 'completed').length;
+      const failed = queueItems.filter((item: any) => item.status === 'failed').length;
+      const inProgress = queueItems.filter((item: any) => item.status === 'in_progress').length;
+      const pending = queueItems.filter((item: any) => item.status === 'pending').length;
 
       console.log(`Progress: ${completed}/${total} sections completed`);
       console.log(`- Completed: ${completed}`);
-      console.log(`- In Progress: ${inProgress}`);
       console.log(`- Failed: ${failed}`);
+      console.log(`- In Progress: ${inProgress}`);
       console.log(`- Pending: ${pending}`);
 
       // Show detailed status for each section
       console.log('\nDetailed Section Status:');
-      queueItems.forEach((item: QueueItem) => {
+      queueItems.forEach((item: any) => {
         const status = item.status.toUpperCase().padEnd(11);
         const attempts = `(${item.attempts} attempts)`.padEnd(13);
         console.log(`${item.section_type}: ${status} ${attempts}`);
+        
         if (item.error_message) {
           console.log(`  Error: ${item.error_message}`);
         }
       });
+
+      console.log('\n' + '-'.repeat(50) + '\n');
     }
   } catch (error) {
-    console.error('Error monitoring queue:', error);
+    console.error('Error in queue monitor:', error);
   }
 }
 
@@ -121,15 +124,12 @@ async function monitorQueue() {
 console.log('Starting queue monitor...\n');
 monitorQueue();
 
-// Set up interval to check every 30 seconds
-const MONITOR_INTERVAL = 30000;
-setInterval(() => {
-  console.log('\n--- Checking queue status ---');
-  monitorQueue();
-}, MONITOR_INTERVAL);
+// Set up interval to check every minute
+const MONITOR_INTERVAL = 60000; // 1 minute
+setInterval(monitorQueue, MONITOR_INTERVAL);
 
-// Handle graceful shutdown
+// Handle process termination
 process.on('SIGINT', () => {
   console.log('\nStopping queue monitor...');
-  process.exit(0);
+  process.exit();
 });
