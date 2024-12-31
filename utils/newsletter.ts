@@ -122,13 +122,6 @@ async function initializeGenerationQueue(
   console.log('Starting queue initialization for newsletter:', newsletterId);
   
   try {
-    // Start a Supabase transaction
-    const { data: transaction, error: transactionError } = await supabaseAdmin.rpc('begin_transaction');
-    if (transactionError) {
-      console.error('Error starting transaction:', transactionError);
-      throw new APIError('Failed to start transaction', 500);
-    }
-
     // First, check existing queue items
     const { data: existingQueue, error: checkError } = await supabaseAdmin
       .from('newsletter_generation_queue')
@@ -159,33 +152,33 @@ async function initializeGenerationQueue(
 
     // Create new queue items for each section
     console.log('Creating new queue items with config:', SECTION_CONFIG);
-    const queueItems = Object.entries(SECTION_CONFIG).map(([type, config]) => {
-      const item = {
-        newsletter_id: newsletterId,
-        section_type: type,
-        section_number: config.sectionNumber,
-        status: 'pending',
-        attempts: 0,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      };
-      console.log('Creating queue item:', item);
-      return item;
-    });
+    const queueItems = Object.entries(SECTION_CONFIG).map(([type, config]) => ({
+      id: crypto.randomUUID(), // Primary key
+      newsletter_id: newsletterId,
+      section_type: type,
+      section_number: config.sectionNumber,
+      status: 'pending',
+      attempts: 0,
+      error_message: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    }));
 
-    // Insert new queue items
+    // Insert new queue items one by one to ensure they all get created
     console.log('Inserting new queue items...');
-    const { data: insertedItems, error: insertError } = await supabaseAdmin
-      .from('newsletter_generation_queue')
-      .upsert(queueItems)
-      .select();
+    for (const item of queueItems) {
+      const { error: insertError } = await supabaseAdmin
+        .from('newsletter_generation_queue')
+        .upsert(item, {
+          onConflict: 'newsletter_id,section_type'
+        });
 
-    if (insertError) {
-      console.error('Error inserting queue items:', insertError);
-      throw new APIError('Failed to initialize generation queue', 500);
+      if (insertError) {
+        console.error('Error inserting queue item:', insertError);
+        throw new APIError(`Failed to initialize queue item for section ${item.section_number}`, 500);
+      }
+      console.log(`Successfully created queue item for section ${item.section_number}`);
     }
-
-    console.log('Successfully initialized queue with items:', insertedItems);
 
     // Verify queue initialization
     const { data: verifyQueue, error: verifyError } = await supabaseAdmin
@@ -199,38 +192,20 @@ async function initializeGenerationQueue(
       throw new APIError('Failed to verify queue initialization', 500);
     }
 
+    if (!verifyQueue || verifyQueue.length === 0) {
+      console.error('Queue verification failed: No items found after initialization');
+      throw new APIError('Queue initialization failed: No items created', 500);
+    }
+
     console.log('Queue verification complete. Current queue state:', 
-      verifyQueue?.map((item: {
-        id: string;
-        newsletter_id: string;
-        section_type: string;
-        section_number: number;
-        status: 'pending' | 'in_progress' | 'completed' | 'failed';
-        attempts: number;
-        error_message?: string | null;
-        created_at: string;
-        updated_at: string;
-      }) => ({
+      verifyQueue.map(item => ({
         section: item.section_number,
         type: item.section_type,
         status: item.status
       }))
     );
 
-    // Commit the transaction
-    const { error: commitError } = await supabaseAdmin.rpc('commit_transaction');
-    if (commitError) {
-      console.error('Error committing transaction:', commitError);
-      throw new APIError('Failed to commit transaction', 500);
-    }
-
   } catch (error) {
-    // Rollback the transaction
-    const { error: rollbackError } = await supabaseAdmin.rpc('rollback_transaction');
-    if (rollbackError) {
-      console.error('Error rolling back transaction:', rollbackError);
-    }
-
     console.error('Error in initializeGenerationQueue:', error);
     console.error('Stack trace:', error instanceof Error ? error.stack : 'No stack trace');
     throw new APIError(
