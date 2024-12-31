@@ -4,6 +4,7 @@ import { NewsletterWithCompany, NewsletterSection, NewsletterSectionStatus } fro
 import { getSupabaseAdmin } from './supabase-admin';
 import { APIError } from './errors';
 import { generateImage } from './image';
+import { SupabaseClient } from '@supabase/supabase-js';
 
 // Use database types
 type NewsletterSectionInsert = Database['public']['Tables']['newsletter_sections']['Insert'];
@@ -115,7 +116,7 @@ async function waitForImageRateLimit() {
 
 async function initializeGenerationQueue(
   newsletterId: string,
-  supabaseAdmin: any
+  supabaseAdmin: SupabaseClient<Database>
 ): Promise<void> {
   console.log('Starting queue initialization for newsletter:', newsletterId);
   
@@ -198,7 +199,7 @@ async function initializeGenerationQueue(
     }
 
     console.log('Queue verification complete. Current queue state:', 
-      verifyQueue.map(item => ({
+      verifyQueue.map((item: QueueItem) => ({
         section: item.section_number,
         type: item.section_type,
         status: item.status
@@ -216,7 +217,7 @@ async function initializeGenerationQueue(
 }
 
 async function updateQueueItemStatus(
-  supabaseAdmin: any,
+  supabaseAdmin: SupabaseClient<Database>,
   newsletterId: string,
   sectionType: SectionType,
   status: 'in_progress' | 'completed' | 'failed',
@@ -359,7 +360,7 @@ export async function generateNewsletter(
       throw new APIError('Failed to initialize generation queue', 500);
     }
 
-    console.log('Initial queue state:', initialQueue.map(item => ({
+    console.log('Initial queue state:', initialQueue.map((item: QueueItem) => ({
       section: item.section_number,
       type: item.section_type,
       status: item.status
