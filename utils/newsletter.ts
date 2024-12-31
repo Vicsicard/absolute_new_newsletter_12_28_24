@@ -4,6 +4,7 @@ import { NewsletterWithCompany, NewsletterSection, NewsletterSectionStatus } fro
 import { getSupabaseAdmin } from './supabase-admin';
 import { APIError } from './errors';
 import { generateImage } from './image';
+import { randomUUID } from 'crypto';
 
 // Use Supabase types
 type NewsletterSectionInsert = Database['public']['Tables']['newsletter_sections']['Insert'];
@@ -153,7 +154,7 @@ async function initializeGenerationQueue(
     // Create new queue items for each section
     console.log('Creating new queue items with config:', SECTION_CONFIG);
     const queueItems = Object.entries(SECTION_CONFIG).map(([type, config]) => ({
-      id: crypto.randomUUID(), // Primary key
+      id: randomUUID(), // Primary key
       newsletter_id: newsletterId,
       section_type: type,
       section_number: config.sectionNumber,
