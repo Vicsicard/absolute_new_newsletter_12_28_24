@@ -119,41 +119,94 @@ async function initializeGenerationQueue(
   newsletterId: string,
   supabaseAdmin: any
 ): Promise<void> {
+  console.log('Starting queue initialization for newsletter:', newsletterId);
+  
   try {
-    // First, delete any existing queue items for this newsletter
-    const { error: deleteError } = await supabaseAdmin
+    // First, check existing queue items
+    const { data: existingQueue, error: checkError } = await supabaseAdmin
       .from('newsletter_generation_queue')
-      .delete()
+      .select('*')
       .eq('newsletter_id', newsletterId);
 
-    if (deleteError) {
-      console.error('Error deleting existing queue items:', deleteError);
-      throw new APIError('Failed to clear existing queue items', 500);
+    if (checkError) {
+      console.error('Error checking existing queue:', checkError);
+      throw new APIError('Failed to check existing queue', 500);
     }
 
-    // Create queue items for each section
-    const queueItems = Object.entries(SECTION_CONFIG).map(([type, config]) => ({
-      newsletter_id: newsletterId,
-      section_type: type,
-      section_number: config.sectionNumber,
-      status: 'pending',
-      attempts: 0,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
-    }));
+    console.log('Existing queue items:', existingQueue?.length || 0);
+
+    // Delete existing queue items if any
+    if (existingQueue?.length > 0) {
+      console.log('Deleting existing queue items...');
+      const { error: deleteError } = await supabaseAdmin
+        .from('newsletter_generation_queue')
+        .delete()
+        .eq('newsletter_id', newsletterId);
+
+      if (deleteError) {
+        console.error('Error deleting existing queue items:', deleteError);
+        throw new APIError('Failed to clear existing queue items', 500);
+      }
+      console.log('Successfully deleted existing queue items');
+    }
+
+    // Create new queue items for each section
+    console.log('Creating new queue items with config:', SECTION_CONFIG);
+    const queueItems = Object.entries(SECTION_CONFIG).map(([type, config]) => {
+      const item = {
+        newsletter_id: newsletterId,
+        section_type: type,
+        section_number: config.sectionNumber,
+        status: 'pending',
+        attempts: 0,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+      console.log('Creating queue item:', item);
+      return item;
+    });
 
     // Insert new queue items
-    const { error: insertError } = await supabaseAdmin
+    console.log('Inserting new queue items...');
+    const { data: insertedItems, error: insertError } = await supabaseAdmin
       .from('newsletter_generation_queue')
-      .insert(queueItems);
+      .insert(queueItems)
+      .select();
 
     if (insertError) {
       console.error('Error inserting queue items:', insertError);
       throw new APIError('Failed to initialize generation queue', 500);
     }
+
+    console.log('Successfully initialized queue with items:', insertedItems);
+
+    // Verify queue initialization
+    const { data: verifyQueue, error: verifyError } = await supabaseAdmin
+      .from('newsletter_generation_queue')
+      .select('*')
+      .eq('newsletter_id', newsletterId)
+      .order('section_number', { ascending: true });
+
+    if (verifyError) {
+      console.error('Error verifying queue:', verifyError);
+      throw new APIError('Failed to verify queue initialization', 500);
+    }
+
+    console.log('Queue verification complete. Current queue state:', 
+      verifyQueue?.map(item => ({
+        section: item.section_number,
+        type: item.section_type,
+        status: item.status
+      }))
+    );
+
   } catch (error) {
     console.error('Error in initializeGenerationQueue:', error);
-    throw new APIError('Failed to initialize generation queue', 500);
+    console.error('Stack trace:', error instanceof Error ? error.stack : 'No stack trace');
+    throw new APIError(
+      `Failed to initialize generation queue: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      500
+    );
   }
 }
 
