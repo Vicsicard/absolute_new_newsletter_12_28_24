@@ -153,6 +153,7 @@ async function initializeGenerationQueue(
 
     // Create new queue items for each section
     console.log('Creating new queue items with config:', SECTION_CONFIG);
+    const timestamp = new Date().toISOString();
     const queueItems = Object.entries(SECTION_CONFIG).map(([type, config]) => ({
       id: randomUUID(), // Primary key
       newsletter_id: newsletterId,
@@ -161,8 +162,9 @@ async function initializeGenerationQueue(
       status: 'pending',
       attempts: 0,
       error_message: null,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
+      last_attempt_at: null,
+      created_at: timestamp,
+      updated_at: timestamp
     }));
 
     // Insert new queue items one by one to ensure they all get created
