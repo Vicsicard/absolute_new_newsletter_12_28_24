@@ -51,7 +51,9 @@ export default function Home() {
         throw new Error(data.message || 'Failed to submit form');
       }
 
-      setSuccess(data.message || 'Newsletter setup completed! Check your email for the draft.');
+      const formDataObj = Object.fromEntries(formData);
+      const contactEmail = formDataObj.contact_email as string;
+      setSuccess(`Newsletter setup completed! Your draft newsletter will be emailed to ${contactEmail} within 24 hours. Please check your spam folder if you don't see it in your inbox.`);
       if (formRef.current) {
         formRef.current.reset();
       }
