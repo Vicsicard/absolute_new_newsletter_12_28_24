@@ -4,13 +4,15 @@ This document contains monitoring tools and scripts for the newsletter applicati
 
 ## Onboarding Process Monitor
 
-The onboarding process monitor script tracks the complete flow of newsletter generation from company creation to email sending.
+The onboarding process monitor script tracks the complete flow of newsletter generation from company creation to email sending. The script monitors the process for a specific submission by tracking the contact email provided in the submission form.
 
 ### Usage
 
 ```bash
-npx ts-node scripts/verify-onboarding.ts <email>
+npx ts-node scripts/verify-onboarding.ts {contact_email}
 ```
+
+Replace `{contact_email}` with the email address that was submitted through the onboarding form.
 
 ### What it Monitors
 
@@ -329,11 +331,11 @@ Monitoring Onboarding Process (Attempt 1/60)
 
 1. Company Creation:
    Status: ✅ Created
-   Created At: 12/31/2023, 12:47:23 PM
+   Created At: [timestamp]
 
 2. Newsletter Creation:
    Status: ✅ Created
-   Created At: 12/31/2023, 12:47:23 PM
+   Created At: [timestamp]
 
 3. Newsletter Sections:
    Status: ✅ Created
@@ -353,11 +355,24 @@ Monitoring Onboarding Process (Attempt 1/60)
 ### Success Criteria
 
 The monitoring process is considered complete when:
-1. Company exists
-2. Newsletter exists
+1. Company exists with the provided contact email
+2. Newsletter exists for that company
 3. All 3 sections exist
 4. All sections have content and images generated
 5. All queue items are completed
-6. Draft email has been sent
+6. Draft email has been sent to the contact email
 
 The process will timeout after 30 minutes if not completed.
+
+### Monitoring a Specific Submission
+
+To monitor a specific submission:
+
+1. Get the contact email from the submission form
+2. Run the script with that email:
+   ```bash
+   npx ts-node scripts/verify-onboarding.ts "{contact_email}"
+   ```
+3. The script will track all stages of the process for that specific submission
+
+Note: Each submission is uniquely identified by the contact email, so make sure to use the exact email that was provided in the submission form.
