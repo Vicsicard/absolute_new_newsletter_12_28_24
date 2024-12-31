@@ -14,25 +14,47 @@ export async function POST(
   try {
     console.log('Generating newsletter for ID:', params.id);
     
+    // Get recipient email from request body
+    const body = await request.json();
+    const recipientEmail = body.recipientEmail;
+
+    if (!recipientEmail) {
+      return NextResponse.json(
+        { success: false, message: 'Recipient email is required' },
+        { status: 400 }
+      );
+    }
+    
     const sections = await generateNewsletter(params.id);
     
     console.log('Generated sections:', sections);
 
-    // Now send the draft email directly without making an HTTP request
-    console.log('Sending draft email...');
+    // Now send the draft email with the provided recipient email
+    console.log('Sending draft email to:', recipientEmail);
     try {
-      const result = await sendNewsletterDraft(params.id);
+      const result = await sendNewsletterDraft(params.id, recipientEmail);
       console.log('Draft sent successfully:', result);
+      
+      return NextResponse.json({
+        success: true,
+        sections,
+        draft: {
+          sent: true,
+          recipientEmail,
+          result
+        }
+      });
     } catch (error) {
       console.error('Error sending draft:', error);
-      // Continue even if draft sending fails - we don't want to fail the whole generation
-      // The user can always retry sending the draft later
+      return NextResponse.json({
+        success: true,
+        sections,
+        draft: {
+          sent: false,
+          error: error instanceof Error ? error.message : 'Failed to send draft'
+        }
+      });
     }
-
-    return NextResponse.json({
-      success: true,
-      sections
-    });
   } catch (error) {
     console.error('Error generating newsletter:', error);
     

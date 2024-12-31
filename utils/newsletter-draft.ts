@@ -26,7 +26,7 @@ interface SendNewsletterDraftResult {
  * - Sending the email
  * - Updating the newsletter status
  */
-export async function sendNewsletterDraft(newsletterId: string): Promise<SendNewsletterDraftResult> {
+export async function sendNewsletterDraft(newsletterId: string, recipientEmail?: string): Promise<SendNewsletterDraftResult> {
   const supabaseAdmin = getSupabaseAdmin();
   
   try {
@@ -72,13 +72,15 @@ export async function sendNewsletterDraft(newsletterId: string): Promise<SendNew
       throw new APIError('Newsletter not found', 404);
     }
 
-    if (!newsletter.draft_recipient_email) {
+    // Use provided recipient email or fallback to draft_recipient_email
+    const targetEmail = recipientEmail || newsletter.draft_recipient_email;
+    if (!targetEmail) {
       throw new APIError('Draft recipient email is required', 400);
     }
 
     // Validate email format
-    if (newsletter.draft_recipient_email && !validateEmail(newsletter.draft_recipient_email)) {
-      throw new APIError(`Invalid draft recipient email format: ${newsletter.draft_recipient_email}`, 400);
+    if (!validateEmail(targetEmail)) {
+      throw new APIError(`Invalid draft recipient email format: ${targetEmail}`, 400);
     }
 
     // Transform the response to match NewsletterWithAll type
@@ -99,10 +101,10 @@ export async function sendNewsletterDraft(newsletterId: string): Promise<SendNew
     });
 
     // Send draft to test recipient
-    console.log('Sending draft to:', newsletter.draft_recipient_email);
+    console.log('Sending draft to:', targetEmail);
     const result = await sendBulkEmails(
       [{
-        email: newsletter.draft_recipient_email,
+        email: targetEmail,
         name: null // Match database schema where name is optional
       }],
       typedNewsletter.subject,
