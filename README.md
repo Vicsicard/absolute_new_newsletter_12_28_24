@@ -1,6 +1,6 @@
 # AI-Powered Newsletter Generator
 
-A modern, AI-powered newsletter generation system that creates personalized technology newsletters using OpenAI's GPT-4 and DALL-E for content and image generation.
+A modern, AI-powered newsletter generation system that creates personalized technology newsletters using OpenAI's GPT-4 and DALL-E for content and image generation. Features a robust queue-based generation system for reliable content creation.
 
 ## Features
 
@@ -8,9 +8,14 @@ A modern, AI-powered newsletter generation system that creates personalized tech
 - 🎨 Automatic image generation with DALL-E
 - 📧 Email delivery via Brevo API
 - 📊 Progress tracking and status monitoring
-- 🔄 Queue-based generation system
-- 🎯 Customizable content sections
+- 🔄 Queue-based generation system with retry mechanism
+- 🎯 Three customizable content sections:
+  - Welcome Message
+  - Industry Trends
+  - Practical Tips
 - 💾 Persistent storage with Supabase
+- 📈 Status tracking and error handling
+- 🔍 Generation progress monitoring
 
 ## Getting Started
 
@@ -32,6 +37,9 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
 OPENAI_API_KEY=your_openai_api_key
 BREVO_API_KEY=your_brevo_api_key
+BREVO_SENDER_EMAIL=your_sender_email
+BREVO_SENDER_NAME=your_sender_name
+BASE_URL=your_base_url
 ```
 
 ### Installation
@@ -56,9 +64,37 @@ BREVO_API_KEY=your_brevo_api_key
 ## API Endpoints
 
 ### Newsletter Generation
-- `POST /api/newsletter/generate`: Generate a new newsletter
-- `GET /api/newsletter/status/[id]`: Check newsletter generation status
+- `POST /api/newsletter/generate`: Queue a new newsletter generation
+- `GET /api/newsletter/status/[id]`: Check generation queue status
 - `POST /api/newsletter/send-draft/[id]`: Send a draft newsletter
+- `POST /api/newsletter/send`: Send newsletter to contacts
+
+### Company Management
+- `POST /api/onboarding`: Register new company
+- `GET /api/company/[id]/latest-newsletter`: Get company's latest newsletter
+
+### Contact Management
+- `POST /api/contacts/upload`: Upload contact list
+
+## Queue System
+
+The application uses a robust queue system for newsletter generation:
+
+1. **Queue Creation**
+   - Each newsletter section is queued separately
+   - Status tracking per section
+   - Retry mechanism for failed generations
+
+2. **Status Tracking**
+   - `pending`: Initial state
+   - `in_progress`: Currently generating
+   - `completed`: Successfully generated
+   - `failed`: Generation failed
+
+3. **Error Handling**
+   - Automatic retries for failed generations
+   - Error message tracking
+   - Attempt counting
 
 ## Architecture
 
@@ -66,8 +102,19 @@ The application uses:
 - Next.js 14 for the framework
 - Supabase for database and authentication
 - OpenAI GPT-4 for content generation
-- DALL-E for image generation
+- DALL-E 3 for image generation
 - Brevo for email delivery
+- Queue-based system for reliable generation
+
+### Database Schema
+
+Key tables:
+- `newsletters`: Stores newsletter metadata
+- `newsletter_sections`: Individual content sections
+- `newsletter_generation_queue`: Generation queue status
+- `companies`: Company information
+- `contacts`: Contact list
+- `newsletter_contacts`: Newsletter-contact relationships
 
 ## Contributing
 
@@ -77,6 +124,15 @@ The application uses:
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
+For detailed contribution guidelines, see [CONTRIBUTING.md](CONTRIBUTING.md)
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details
+
+## Documentation
+
+Additional documentation:
+- [Database Indexes](docs/DATABASE_INDEXES.md)
+- [Brevo Integration](docs/BREVO_INTEGRATION.md)
+- [Project Status](PROJECT_STATUS.md)

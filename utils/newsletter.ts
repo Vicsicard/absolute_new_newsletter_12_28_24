@@ -7,7 +7,7 @@ import { generateImage } from './image';
 
 // Use Supabase types
 type NewsletterSectionInsert = Database['public']['Tables']['newsletter_sections']['Insert'];
-type NewsletterSectionRow = Database['public']['Tables']['newsletter_sections']['Row'];
+type NewsletterSectionRow = Database['public']['Tables']['newsletter_sections']['Row']
 
 interface GenerateOptions {
   companyName: string;
@@ -274,13 +274,29 @@ export async function generateNewsletter(
 
     // Generate each section
     for (const [sectionType, config] of Object.entries(SECTION_CONFIG) as [SectionType, typeof SECTION_CONFIG[SectionType]][]) {
-      console.log(`Generating section ${config.sectionNumber} (${sectionType})...`);
+      console.log(`Starting generation for section ${config.sectionNumber} (${sectionType})...`);
       
       try {
+        // Check if section already exists
+        const { data: existingSection } = await supabaseAdmin
+          .from('newsletter_sections')
+          .select('*')
+          .eq('newsletter_id', newsletterId)
+          .eq('section_number', config.sectionNumber)
+          .single();
+
+        if (existingSection) {
+          console.log(`Section ${config.sectionNumber} already exists, skipping...`);
+          continue;
+        }
+
         // Update queue status to in_progress
+        console.log(`Updating queue status to in_progress for section ${config.sectionNumber}...`);
         await updateQueueItemStatus(supabaseAdmin, newsletterId, sectionType, 'in_progress');
 
         const prompt = sectionType === 'welcome' ? config.prompt : (customPrompt || config.prompt);
+        
+        console.log(`Calling OpenAI for section ${config.sectionNumber} with prompt:`, prompt);
         
         const response = await callOpenAIWithRetry([{
           role: "system",
@@ -342,16 +358,26 @@ export async function generateNewsletter(
           console.log('Waiting before generating next section...');
           await new Promise(resolve => setTimeout(resolve, 2000));
         }
-      } catch (sectionError) {
-        console.error(`Error generating section ${config.sectionNumber}:`, sectionError);
+      } catch (error) {
+        console.error(`Error generating section ${config.sectionNumber}:`, error);
+        
+        // Update queue status to failed
         await updateQueueItemStatus(
           supabaseAdmin,
           newsletterId,
           sectionType,
           'failed',
-          sectionError instanceof Error ? sectionError.message : 'Unknown error'
+          error instanceof Error ? error.message : 'Unknown error'
         );
-        throw sectionError;
+
+        // If this is the welcome section, we should stop the entire process
+        if (sectionType === 'welcome') {
+          throw error;
+        }
+
+        // For other sections, we'll log the error but continue with the next section
+        console.log(`Continuing to next section after error in section ${config.sectionNumber}...`);
+        continue;
       }
     }
 

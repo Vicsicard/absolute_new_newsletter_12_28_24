@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { generateNewsletter } from '@/utils/newsletter';
-import { DatabaseError } from '@/utils/errors';
+import { sendNewsletterDraft } from '@/utils/newsletter-draft';
+import { DatabaseError, APIError } from '@/utils/errors';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -17,65 +18,15 @@ export async function POST(
     
     console.log('Generated sections:', sections);
 
-    // Now send the draft email
+    // Now send the draft email directly without making an HTTP request
     console.log('Sending draft email...');
-    const baseUrl = process.env.BASE_URL || process.env.VERCEL_URL || request.headers.get('host');
-    if (!baseUrl) {
-      console.error('No base URL available');
-      throw new Error('No base URL available');
-    }
-
-    const protocol = 'https';
-    const apiUrl = baseUrl.startsWith('http') ? baseUrl : `${protocol}://${baseUrl}`;
-
-    console.log('Sending draft with:', {
-      baseUrl,
-      apiUrl,
-      hasBrevoKey: !!process.env.BREVO_API_KEY,
-      hasBrevoSender: !!process.env.BREVO_SENDER_EMAIL
-    });
-
-    const sendDraftUrl = `${apiUrl}/api/newsletter/send-draft`;
     try {
-      const sendDraftResponse = await fetch(sendDraftUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          newsletterId: params.id
-        })
-      });
-
-      const responseText = await sendDraftResponse.text();
-      console.log('Send draft response:', {
-        url: sendDraftUrl,
-        status: sendDraftResponse.status,
-        statusText: sendDraftResponse.statusText,
-        headers: Object.fromEntries(sendDraftResponse.headers.entries()),
-        body: responseText
-      });
-
-      if (!sendDraftResponse.ok) {
-        console.error('Failed to send draft:', {
-          url: sendDraftUrl,
-          status: sendDraftResponse.status,
-          statusText: sendDraftResponse.statusText,
-          error: responseText
-        });
-      } else {
-        try {
-          const sendResult = JSON.parse(responseText);
-          console.log('Draft sent successfully:', sendResult);
-        } catch (parseError) {
-          console.error('Error parsing send draft response:', parseError);
-        }
-      }
+      const result = await sendNewsletterDraft(params.id);
+      console.log('Draft sent successfully:', result);
     } catch (error) {
-      console.error('Error calling send-draft endpoint:', {
-        url: sendDraftUrl,
-        error
-      });
+      console.error('Error sending draft:', error);
+      // Continue even if draft sending fails - we don't want to fail the whole generation
+      // The user can always retry sending the draft later
     }
 
     return NextResponse.json({

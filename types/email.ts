@@ -1,6 +1,16 @@
 // Email Types
 import type { Database } from './database';
 
+// Status types - must match database CHECK constraints exactly
+export type NewsletterStatus = 'draft' | 'ready_to_send' | 'sending' | 'sent' | 'error';
+export type DraftStatus = 'pending' | 'sent' | 'failed';
+export type ContactStatus = 'active' | 'deleted';
+export type NewsletterContactStatus = 'pending' | 'sent' | 'failed';
+export type NewsletterSectionStatus = 'active' | 'deleted';
+export type ImageGenerationStatus = 'pending' | 'processing' | 'completed' | 'failed';
+export type CsvUploadStatus = 'pending' | 'processing' | 'completed' | 'failed';
+export type CompiledNewsletterStatus = 'draft' | 'ready' | 'sent' | 'error';
+
 // Base types from database
 export type Company = {
   id: string;
@@ -112,29 +122,19 @@ export type IndustryInsight = {
   updated_at: string | null;
 };
 
-// Status types - must match database CHECK constraints exactly
-export type NewsletterStatus = 'draft' | 'draft_sent' | 'pending_contacts' | 'ready_to_send' | 'sending' | 'sent' | 'failed';
-export type DraftStatus = 'pending' | 'sent' | 'failed';
-export type ContactStatus = 'active' | 'deleted';
-export type NewsletterContactStatus = 'pending' | 'sent' | 'failed';
-export type NewsletterSectionStatus = 'active' | 'deleted';
-export type ImageGenerationStatus = 'pending' | 'processing' | 'completed' | 'failed';
-export type CsvUploadStatus = 'pending' | 'processing' | 'completed' | 'failed';
-export type CompiledNewsletterStatus = 'draft' | 'ready' | 'sent' | 'error';
-
 // Relationship types
-export interface NewsletterWithCompany extends Newsletter {
+export type NewsletterWithCompany = Newsletter & {
   company: Company;
-}
+};
 
-export interface NewsletterWithSections extends Newsletter {
+export type NewsletterWithSections = Newsletter & {
   newsletter_sections: NewsletterSection[];
-}
+};
 
-export interface NewsletterWithAll extends Newsletter {
+export type NewsletterWithAll = Newsletter & {
   company: Company;
   newsletter_sections: NewsletterSection[];
-}
+};
 
 // Email specific interfaces
 export interface EmailContact {

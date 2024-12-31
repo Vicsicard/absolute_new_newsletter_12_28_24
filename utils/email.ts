@@ -1,7 +1,7 @@
 import { Database } from '@/types/database';
 import { getSupabaseAdmin } from '@/utils/supabase-admin';
 import { APIError } from '@/utils/errors';
-import type { NewsletterContactStatus } from '@/types/email';
+import type { NewsletterStatus, NewsletterContactStatus } from '@/types/email';
 
 type Contact = Database['public']['Tables']['contacts']['Row'];
 type NewsletterContact = Database['public']['Tables']['newsletter_contacts']['Row'];
@@ -187,7 +187,7 @@ export async function sendNewsletter(
     const { error: updateError } = await supabaseAdmin
       .from('newsletters')
       .update({
-        status: 'sending',
+        status: 'sending' as NewsletterStatus,
         updated_at: new Date().toISOString()
       })
       .eq('id', newsletterId);
@@ -244,8 +244,8 @@ export async function sendNewsletter(
       }
     }
 
-    // Update final newsletter status
-    const finalStatus = failedContacts.length === 0 ? 'sent' : 'failed';
+    // Update final newsletter status based on database constraints
+    const finalStatus: NewsletterStatus = failedContacts.length === 0 ? 'sent' : 'error';
     const { error: finalUpdateError } = await supabaseAdmin
       .from('newsletters')
       .update({
@@ -268,11 +268,11 @@ export async function sendNewsletter(
     };
 
   } catch (error) {
-    // Update newsletter status to failed
+    // Update newsletter status to error
     await supabaseAdmin
       .from('newsletters')
       .update({
-        status: 'failed',
+        status: 'error' as NewsletterStatus,
         updated_at: new Date().toISOString()
       })
       .eq('id', newsletterId);

@@ -99,6 +99,7 @@ export async function POST(req: NextRequest) {
             company_id: company.id,
             email: contact.email,
             name: contact.name || null,
+            status: 'active' as ContactStatus,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
           }));
