@@ -1,6 +1,6 @@
-const { createClient } = require('@supabase/supabase-js');
-const dotenv = require('dotenv');
-const { join } = require('path');
+import { createClient } from '@supabase/supabase-js';
+import dotenv from 'dotenv';
+import { join } from 'path';
 
 // Load environment variables from .env.local
 dotenv.config({ path: join(process.cwd(), '.env.local') });
