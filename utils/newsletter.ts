@@ -57,39 +57,35 @@ async function validateOpenAIKey() {
   }
 }
 
-async function callOpenAIWithRetry(messages: any[], retries = 3, delay = 500): Promise<string> {
+async function callOpenAIWithRetry(messages: any[], retries = 5, delay = 60000): Promise<string> {
+  const openai = new OpenAI();
+  
   for (let i = 0; i < retries; i++) {
     try {
       const completion = await openai.chat.completions.create({
-        model: "gpt-4",
-        messages: messages,
+        messages,
+        model: 'gpt-4',
         temperature: 0.7,
         max_tokens: 2000,
-        presence_penalty: 0.1,  // Slight penalty to encourage varied content
-        frequency_penalty: 0.1  // Slight penalty to discourage repetition
+        timeout: 180000 // 3 minute timeout
       });
 
-      const response = completion.choices[0]?.message?.content;
-      if (!response) {
-        throw new Error('No response from OpenAI');
-      }
-      return response;
+      return completion.choices[0].message.content || '';
     } catch (error: any) {
-      console.error(`OpenAI API attempt ${i + 1} failed:`, error);
-      
-      if (error?.status === 429) { // Rate limit error
-        const waitTime = Math.min(delay * Math.pow(1.2, i), 2000); // Shorter backoff since we have high limits
-        console.log(`Rate limited. Waiting ${waitTime}ms before retry...`);
-        await new Promise(resolve => setTimeout(resolve, waitTime));
-        continue;
-      }
+      console.error(`OpenAI API call failed (attempt ${i + 1}/${retries}):`, error);
       
       if (i === retries - 1) {
         throw error;
       }
+      
+      // Exponential backoff: 1 min, 2 min, 4 min, 8 min
+      const backoffDelay = delay * Math.pow(2, i);
+      console.log(`Retrying in ${backoffDelay/1000} seconds...`);
+      await new Promise(resolve => setTimeout(resolve, backoffDelay));
     }
   }
-  throw new Error('Max retries reached');
+  
+  throw new Error('Failed to get response from OpenAI after all retries');
 }
 
 // Track DALL-E usage to stay within 15 images per minute limit
@@ -331,10 +327,10 @@ export async function generateNewsletter(
     console.log('Starting queue initialization...');
     await initializeGenerationQueue(newsletterId, supabaseAdmin);
     
-    // Verify queue initialization with retries
+    // Verify queue initialization with extended retries
     let initialQueue = null;
     let verifyError = null;
-    let retries = 3;
+    let retries = 5; // Increase retries
     
     while (retries > 0) {
       const result = await supabaseAdmin
@@ -351,8 +347,8 @@ export async function generateNewsletter(
       verifyError = result.error;
       retries--;
       if (retries > 0) {
-        console.log(`Queue verification attempt failed, retrying in 1 second... (${retries} attempts left)`);
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        console.log(`Queue verification attempt failed, retrying in 30 seconds... (${retries} attempts left)`);
+        await new Promise(resolve => setTimeout(resolve, 30000)); // 30 second delay between retries
       }
     }
 
@@ -369,7 +365,7 @@ export async function generateNewsletter(
 
     const sections: NewsletterSectionInsert[] = [];
 
-    // Generate each section
+    // Generate each section with longer delays between sections
     for (const [sectionType, config] of Object.entries(SECTION_CONFIG) as [SectionType, typeof SECTION_CONFIG[SectionType]][]) {
       console.log(`Starting generation for section ${config.sectionNumber} (${sectionType})...`);
       
@@ -382,11 +378,13 @@ export async function generateNewsletter(
         .single();
 
       if (queueError) {
-        console.error(`Error checking queue for section ${config.sectionNumber}:`, queueError);
-      } else {
-        console.log(`Queue status for section ${config.sectionNumber}:`, queueItem?.status);
+        console.error(`Error checking queue for section ${sectionType}:`, queueError);
+        continue;
       }
-      
+
+      // Update status to in_progress
+      await updateQueueItemStatus(supabaseAdmin, newsletterId, sectionType, 'in_progress');
+
       try {
         // Check if section already exists
         const { data: existingSection } = await supabaseAdmin
@@ -400,10 +398,6 @@ export async function generateNewsletter(
           console.log(`Section ${config.sectionNumber} already exists, skipping...`);
           continue;
         }
-
-        // Update queue status to in_progress
-        console.log(`Updating queue status to in_progress for section ${config.sectionNumber}...`);
-        await updateQueueItemStatus(supabaseAdmin, newsletterId, sectionType, 'in_progress');
 
         const prompt = sectionType === 'welcome' ? config.prompt : (customPrompt || config.prompt);
         
@@ -461,34 +455,32 @@ export async function generateNewsletter(
           throw new Error(`Failed to upsert section: ${upsertError.message}`);
         }
 
-        // Update queue status to completed
+        // Update status to completed
         await updateQueueItemStatus(supabaseAdmin, newsletterId, sectionType, 'completed');
-
-        // Add delay between sections to avoid rate limits
-        if (sectionType !== 'practical_tips') {
-          console.log('Waiting before generating next section...');
-          await new Promise(resolve => setTimeout(resolve, 7000)); // Increased from 2000ms to 7000ms
-        }
-      } catch (error) {
-        console.error(`Error generating section ${config.sectionNumber}:`, error);
         
-        // Update queue status to failed
+        // Add a 15-minute delay between sections to handle OpenAI load
+        if (config.sectionNumber < Object.keys(SECTION_CONFIG).length) {
+          console.log(`Waiting 15 minutes before starting next section to handle potential OpenAI load...`);
+          await new Promise(resolve => setTimeout(resolve, 900000)); // 15 minutes
+        }
+      } catch (error: any) {
+        console.error(`Error generating section ${sectionType}:`, error);
         await updateQueueItemStatus(
           supabaseAdmin,
           newsletterId,
           sectionType,
           'failed',
-          error instanceof Error ? error.message : 'Unknown error'
+          error.message || 'Unknown error'
         );
-
-        // If this is the welcome section, we should stop the entire process
-        if (sectionType === 'welcome') {
-          throw error;
+        
+        // On failure, wait 30 minutes before trying the next section
+        // This gives more time for OpenAI to recover if there are capacity issues
+        if (config.sectionNumber < Object.keys(SECTION_CONFIG).length) {
+          console.log('Error occurred, waiting 30 minutes before next section...');
+          await new Promise(resolve => setTimeout(resolve, 1800000)); // 30 minutes
         }
-
-        // For other sections, we'll log the error but continue with the next section
-        console.log(`Continuing to next section after error in section ${config.sectionNumber}...`);
-        continue;
+        
+        throw error;
       }
     }
 
