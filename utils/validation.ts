@@ -8,8 +8,7 @@ export const validateForm = (formData: FormData): FormErrors => {
     company_name: 'Company name',
     industry: 'Industry',
     contact_email: 'Contact email',
-    target_audience: 'Target audience',
-    audience_description: 'Audience description'
+    target_audience: 'Target audience'
   }
 
   // Validate required fields
@@ -30,18 +29,6 @@ export const validateForm = (formData: FormData): FormErrors => {
   const websiteUrl = formData.get('website_url') as string
   if (websiteUrl && !websiteUrl.startsWith('http')) {
     errors.website_url = 'Please enter a valid URL starting with http:// or https://'
-  }
-
-  // Validate phone number if provided
-  const phoneNumber = formData.get('phone_number') as string
-  if (phoneNumber && !/^\+?[\d\s-()]+$/.test(phoneNumber)) {
-    errors.phone_number = 'Please enter a valid phone number'
-  }
-
-  // Validate audience description length
-  const audienceDescription = formData.get('audience_description') as string
-  if (audienceDescription && audienceDescription.length < 10) {
-    errors.audience_description = 'Please provide a more detailed description (at least 10 characters)'
   }
 
   return errors
