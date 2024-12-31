@@ -122,6 +122,13 @@ async function initializeGenerationQueue(
   console.log('Starting queue initialization for newsletter:', newsletterId);
   
   try {
+    // Start a Supabase transaction
+    const { data: transaction, error: transactionError } = await supabaseAdmin.rpc('begin_transaction');
+    if (transactionError) {
+      console.error('Error starting transaction:', transactionError);
+      throw new APIError('Failed to start transaction', 500);
+    }
+
     // First, check existing queue items
     const { data: existingQueue, error: checkError } = await supabaseAdmin
       .from('newsletter_generation_queue')
@@ -170,7 +177,7 @@ async function initializeGenerationQueue(
     console.log('Inserting new queue items...');
     const { data: insertedItems, error: insertError } = await supabaseAdmin
       .from('newsletter_generation_queue')
-      .insert(queueItems)
+      .upsert(queueItems)
       .select();
 
     if (insertError) {
@@ -210,7 +217,20 @@ async function initializeGenerationQueue(
       }))
     );
 
+    // Commit the transaction
+    const { error: commitError } = await supabaseAdmin.rpc('commit_transaction');
+    if (commitError) {
+      console.error('Error committing transaction:', commitError);
+      throw new APIError('Failed to commit transaction', 500);
+    }
+
   } catch (error) {
+    // Rollback the transaction
+    const { error: rollbackError } = await supabaseAdmin.rpc('rollback_transaction');
+    if (rollbackError) {
+      console.error('Error rolling back transaction:', rollbackError);
+    }
+
     console.error('Error in initializeGenerationQueue:', error);
     console.error('Stack trace:', error instanceof Error ? error.stack : 'No stack trace');
     throw new APIError(
