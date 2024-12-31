@@ -1,5 +1,5 @@
-import { supabaseClient } from './supabase-client'
-import { Database } from '@/types/supabase'
+import { createClient } from '@supabase/supabase-js'
+import { Database } from '@/types/database'
 
 type NewsletterSection = Database['public']['Tables']['newsletter_sections']['Row']
 
