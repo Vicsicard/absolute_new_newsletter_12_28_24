@@ -67,36 +67,15 @@ export async function POST(req: Request) {
       throw new APIError('Failed to update newsletter to sending status', 500);
     }
 
-    // Get all pending contacts for this newsletter
-    const { data: contacts, error: contactsError } = await supabaseAdmin
-      .from('newsletter_contacts')
-      .select(`
-        *,
-        contact:contacts!inner (*)
-      `)
-      .eq('newsletter_id', newsletterId)
-      .eq('status', 'pending')
-      .returns<(NewsletterContact & { contact: Contact })[]>();
-
-    if (contactsError) {
-      throw new APIError('Failed to fetch contacts', 500);
+    // Use the company's contact email
+    if (!typedNewsletter.company?.contact_email) {
+      throw new APIError('No contact email found for company', 404);
     }
 
-    if (!contacts || contacts.length === 0) {
-      throw new APIError('No pending contacts found for this newsletter', 404);
-    }
-
-    // Filter out inactive contacts and format for sending
-    const emailContacts: EmailContact[] = contacts
-      .filter(c => c.contact?.status === 'active')
-      .map(c => ({
-        email: c.contact.email,
-        name: c.contact.name || null
-      }));
-
-    if (emailContacts.length === 0) {
-      throw new APIError('No active contacts found for this newsletter', 400);
-    }
+    const emailContacts: EmailContact[] = [{
+      email: typedNewsletter.company.contact_email,
+      name: typedNewsletter.company.company_name || null
+    }];
 
     // Send emails
     const result = await sendBulkEmails(
@@ -130,28 +109,6 @@ export async function POST(req: Request) {
 
     if (updateError) {
       throw new APIError('Failed to update newsletter status', 500);
-    }
-
-    // Update contact statuses
-    const contactUpdates = contacts.map(contact => ({
-      id: contact.id,
-      status: result.successful.includes(contact.contact.email)
-        ? 'sent' as NewsletterContactStatus
-        : result.failed.find(f => f.email === contact.contact.email)
-        ? 'failed' as NewsletterContactStatus
-        : 'pending' as NewsletterContactStatus,
-      sent_at: result.successful.includes(contact.contact.email)
-        ? new Date().toISOString()
-        : null,
-      error_message: result.failed.find(f => f.email === contact.contact.email)?.error || null
-    }));
-
-    const { error: contactUpdateError } = await supabaseAdmin
-      .from('newsletter_contacts')
-      .upsert(contactUpdates);
-
-    if (contactUpdateError) {
-      throw new APIError('Failed to update contact statuses', 500);
     }
 
     return NextResponse.json({
