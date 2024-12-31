@@ -339,6 +339,20 @@ export async function generateNewsletter(
     for (const [sectionType, config] of Object.entries(SECTION_CONFIG) as [SectionType, typeof SECTION_CONFIG[SectionType]][]) {
       console.log(`Starting generation for section ${config.sectionNumber} (${sectionType})...`);
       
+      // Check queue status before starting
+      const { data: queueItem, error: queueError } = await supabaseAdmin
+        .from('newsletter_generation_queue')
+        .select('*')
+        .eq('newsletter_id', newsletterId)
+        .eq('section_type', sectionType)
+        .single();
+
+      if (queueError) {
+        console.error(`Error checking queue for section ${config.sectionNumber}:`, queueError);
+      } else {
+        console.log(`Queue status for section ${config.sectionNumber}:`, queueItem?.status);
+      }
+      
       try {
         // Check if section already exists
         const { data: existingSection } = await supabaseAdmin
@@ -419,7 +433,7 @@ export async function generateNewsletter(
         // Add delay between sections to avoid rate limits
         if (sectionType !== 'practical_tips') {
           console.log('Waiting before generating next section...');
-          await new Promise(resolve => setTimeout(resolve, 2000));
+          await new Promise(resolve => setTimeout(resolve, 7000)); // Increased from 2000ms to 7000ms
         }
       } catch (error) {
         console.error(`Error generating section ${config.sectionNumber}:`, error);
