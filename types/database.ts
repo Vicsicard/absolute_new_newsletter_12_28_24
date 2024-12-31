@@ -15,6 +15,7 @@ export type NewsletterSectionStatus = 'active' | 'deleted';
 export type ImageGenerationStatus = 'pending' | 'processing' | 'completed' | 'failed';
 export type CsvUploadStatus = 'pending' | 'processing' | 'completed' | 'failed';
 export type CompiledNewsletterStatus = 'draft' | 'ready' | 'sent' | 'error';
+export type NewsletterGenerationQueueStatus = 'pending' | 'in_progress' | 'completed' | 'failed';
 
 export interface Database {
   public: {
@@ -213,6 +214,44 @@ export interface Database {
           status?: 'pending' | 'sent' | 'failed';
           sent_at?: string | null;
           error_message?: string | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+      };
+      newsletter_generation_queue: {
+        Row: {
+          id: string;
+          newsletter_id: string;
+          section_type: string;
+          section_number: number;
+          status: NewsletterGenerationQueueStatus;
+          attempts: number;
+          error_message: string | null;
+          last_attempt_at: string | null;
+          created_at: string | null;
+          updated_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          newsletter_id: string;
+          section_type: string;
+          section_number: number;
+          status?: NewsletterGenerationQueueStatus;
+          attempts?: number;
+          error_message?: string | null;
+          last_attempt_at?: string | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          newsletter_id?: string;
+          section_type?: string;
+          section_number?: number;
+          status?: NewsletterGenerationQueueStatus;
+          attempts?: number;
+          error_message?: string | null;
+          last_attempt_at?: string | null;
           created_at?: string | null;
           updated_at?: string | null;
         };

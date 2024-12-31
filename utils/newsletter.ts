@@ -5,9 +5,10 @@ import { getSupabaseAdmin } from './supabase-admin';
 import { APIError } from './errors';
 import { generateImage } from './image';
 
-// Use Supabase types
+// Use database types
 type NewsletterSectionInsert = Database['public']['Tables']['newsletter_sections']['Insert'];
-type NewsletterSectionRow = Database['public']['Tables']['newsletter_sections']['Row']
+type NewsletterSectionRow = Database['public']['Tables']['newsletter_sections']['Row'];
+type QueueItem = Database['public']['Tables']['newsletter_generation_queue']['Row'];
 
 interface GenerateOptions {
   companyName: string;
