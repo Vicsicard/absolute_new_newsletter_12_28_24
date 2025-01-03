@@ -7,13 +7,17 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "test": "playwright test",
+    "test:ui": "playwright test --ui",
+    "test:debug": "playwright test --debug",
     "monitor": "ts-node -r tsconfig-paths/register -P ./scripts/tsconfig.json scripts/verify-onboarding.ts",
-    "queue": "ts-node -r tsconfig-paths/register -P ./scripts/tsconfig.json scripts/monitor-queue.ts"
+    "queue": "ts-node -r tsconfig-paths/register -P ./scripts/tsconfig.json scripts/monitor-queue.ts",
+    "process": "ts-node -r tsconfig-paths/register -P ./scripts/tsconfig.json scripts/process-queue.ts"
   },
   "dependencies": {
     "@headlessui/react": "^1.7.19",
     "@heroicons/react": "^2.2.0",
-    "@supabase/supabase-js": "^2.39.1",
+    "@supabase/supabase-js": "^2.47.10",
     "@tailwindcss/forms": "^0.5.9",
     "@types/node": "20.10.5",
     "@types/react": "18.2.45",
@@ -34,11 +38,13 @@
     "zod": "^3.22.4"
   },
   "devDependencies": {
+    "@playwright/test": "^1.49.1",
+    "@types/chalk": "^0.4.31",
     "@types/dotenv": "^6.1.1",
     "@types/formidable": "^3.4.5",
     "dotenv": "^16.4.7",
     "encoding": "^0.1.13",
-    "supabase": "^2.1.1",
+    "supabase": "^2.2.1",
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0"
   },

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/utils/supabase-admin';
 import type { OnboardingResponse } from '@/types/api';
-import { APIError } from '@/utils/errors';
+import { APIError, ValidationError, DatabaseError } from '@/utils/errors';
 import { NextRequest } from 'next/server';
 import type { 
   Company,
@@ -35,227 +35,119 @@ export async function POST(req: NextRequest) {
     // Try to parse as JSON first, fallback to FormData
     try {
       jsonData = await req.json();
-      companyData = {
-        company_name: jsonData.company_name,
-        industry: jsonData.industry,
-        contact_email: jsonData.contact_email,
-        target_audience: jsonData.target_audience || null,
-        audience_description: jsonData.audience_description || null,
-        website_url: jsonData.website_url || null,
-        phone_number: jsonData.phone_number || null,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      };
-      contactsData = jsonData.contacts;
-    } catch {
-      // If JSON parsing fails, try FormData with the cloned request
-      const formData = await clonedReq.formData();
-      companyData = {
-        company_name: formData.get('company_name') as string,
-        industry: formData.get('industry') as string,
-        contact_email: formData.get('contact_email') as string,
-        target_audience: formData.get('target_audience') as string || null,
-        audience_description: formData.get('audience_description') as string || null,
-        website_url: formData.get('website_url') as string || null,
-        phone_number: formData.get('phone_number') as string || null,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      };
-      contactsData = formData.get('contacts');
-    }
-
-    console.log('Received onboarding data:', jsonData);
-
-    // Validate required fields
-    const requiredFields = ['company_name', 'industry', 'contact_email'];
-    for (const field of requiredFields) {
-      if (!companyData[field as keyof typeof companyData]) {
-        throw new APIError(`Missing required field: ${field}`, 400);
+    } catch (error) {
+      console.warn('Failed to parse JSON, attempting FormData...');
+      try {
+        const formData = await clonedReq.formData();
+        jsonData = Object.fromEntries(formData.entries());
+      } catch (error) {
+        throw new ValidationError('Invalid request format: must be JSON or FormData');
       }
     }
 
+    // Validate required fields
+    if (!jsonData.company_name || !jsonData.industry || !jsonData.contact_email) {
+      throw new ValidationError('Missing required fields: company_name, industry, and contact_email are required');
+    }
+
     // Create company
-    console.log('Creating company...');
+    companyData = {
+      company_name: jsonData.company_name,
+      industry: jsonData.industry,
+      contact_email: jsonData.contact_email,
+      target_audience: jsonData.target_audience || null,
+      audience_description: jsonData.audience_description || null,
+      website_url: jsonData.website_url || null,
+      phone_number: jsonData.phone_number || null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
     const { data: company, error: companyError } = await supabaseAdmin
       .from('companies')
       .insert(companyData)
       .select()
       .single();
 
-    if (companyError || !company) {
-      console.error('Error creating company:', companyError);
-      throw new APIError('Failed to create company', 500);
+    if (companyError) {
+      throw new DatabaseError('Failed to create company');
     }
 
-    console.log('Company created successfully:', company);
+    // Create newsletter
+    const newsletterData = {
+      company_id: company.id,
+      status: 'draft' as NewsletterStatus,
+      subject: `${company.company_name} Newsletter`,
+      draft_recipient_email: company.contact_email || jsonData.contact_email,  
+      draft_status: 'pending' as DraftStatus,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
 
-    // Parse and validate contacts
-    let contacts: Array<Partial<Contact>> = [];
-    if (contactsData) {
-      try {
-        const parsedContacts = typeof contactsData === 'string' ? JSON.parse(contactsData) : contactsData;
-        if (Array.isArray(parsedContacts)) {
-          contacts = parsedContacts.map((contact: { email: string; name?: string }) => ({
-            company_id: company.id,
-            email: contact.email,
-            name: contact.name || null,
-            status: 'active' as ContactStatus,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          }));
-        }
-      } catch (error) {
-        console.error('Error parsing contacts:', error);
-        throw new APIError('Invalid contacts data format', 400);
-      }
-    }
+    console.log('Creating newsletter with data:', newsletterData);
 
-    // Create initial contacts
-    if (contacts.length > 0) {
-      console.log('Creating contacts...');
-      const { data: createdContacts, error: contactsError } = await supabaseAdmin
-        .from('contacts')
-        .insert(contacts.map(contact => ({
-          ...contact,
-          status: 'active' as ContactStatus,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        })))
-        .select();
-
-      if (contactsError) {
-        console.error('Error creating contacts:', contactsError);
-        throw new APIError('Failed to create contacts', 500);
-      }
-
-      console.log('Contacts created successfully:', createdContacts);
-    }
-
-    // Create initial newsletter
-    console.log('Creating initial newsletter...');
     const { data: newsletter, error: newsletterError } = await supabaseAdmin
       .from('newsletters')
-      .insert({
-        company_id: company.id,
-        subject: `${company.company_name} Newsletter`,
-        draft_status: 'pending' as DraftStatus,
-        draft_recipient_email: company.contact_email,
-        status: 'draft' as NewsletterStatus,
-        sent_count: 0,
-        failed_count: 0,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      })
+      .insert(newsletterData)
       .select()
       .single();
 
-    if (newsletterError || !newsletter) {
-      console.error('Error creating newsletter:', newsletterError);
-      throw new APIError('Failed to create newsletter', 500);
-    }
-
-    console.log('Newsletter created successfully:', newsletter);
-
-    // Create initial newsletter section
-    const sectionData = {
-      newsletter_id: newsletter.id,
-      section_number: 1,
-      title: 'Welcome to Our Newsletter',
-      content: `Welcome to ${company.company_name}'s newsletter! We're excited to share our latest updates and insights with you.`,
-      image_prompt: null,
-      image_url: null,
-      status: 'active' as NewsletterSectionStatus,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
-    };
-
-    const { error: sectionError } = await supabaseAdmin
-      .from('newsletter_sections')
-      .insert(sectionData);
-
-    if (sectionError) {
-      throw new APIError('Failed to create initial newsletter section', 500);
-    }
-
-    // Create newsletter contacts entries
-    if (contacts.length > 0) {
-      const newsletterContacts: Partial<NewsletterContact>[] = contacts.map(contact => ({
-        newsletter_id: newsletter.id,
-        contact_id: contact.id,
-        status: 'pending' as NewsletterContactStatus,
-        sent_at: null,
-        error_message: null,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      }));
-
-      const { error: newsletterContactsError } = await supabaseAdmin
-        .from('newsletter_contacts')
-        .insert(newsletterContacts);
-
-      if (newsletterContactsError) {
-        throw new APIError('Failed to create newsletter contacts', 500);
+    if (newsletterError) {
+      console.error('Newsletter creation error:', newsletterError);
+      // If newsletter creation fails, delete the company
+      const { error: deleteError } = await supabaseAdmin
+        .from('companies')
+        .delete()
+        .eq('id', company.id);
+      
+      if (deleteError) {
+        console.error('Failed to cleanup company after newsletter error:', deleteError);
       }
+      throw new DatabaseError(`Failed to create newsletter: ${newsletterError.message}`);
     }
 
-    // Generate and send draft newsletter
+    // The database trigger will automatically create queue items and sections
+    // No need to create them manually here
+
+    // Start the queue processor if not already running
     try {
-      // Get the host from the request headers
-      const host = req.headers.get('host') || process.env.VERCEL_URL;
-      const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';
-      const baseUrl = `${protocol}://${host}`;
-
-      console.log('DEBUG - Request headers:', Object.fromEntries(req.headers.entries()));
-      console.log('DEBUG - Environment:', {
-        NODE_ENV: process.env.NODE_ENV,
-        VERCEL_URL: process.env.VERCEL_URL,
-        host,
-        protocol,
-        baseUrl
-      });
-
-      // Start the newsletter generation process asynchronously
-      console.log('Starting async newsletter generation...');
-      const generateUrl = `${baseUrl}/api/newsletter/generate/${newsletter.id}`;
-      fetch(generateUrl, {
+      const baseUrl = process.env.BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
+      const response = await fetch(`${baseUrl}/api/queue/start`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`
         },
-        body: JSON.stringify({
-          newsletterId: newsletter.id
-        })
-      }).catch(error => {
-        console.error('Async newsletter generation error:', error);
+        body: JSON.stringify({ newsletterId: newsletter.id })
       });
-
-      // Return success immediately
-      return NextResponse.json({
-        success: true,
-        message: 'Newsletter setup started. You will receive an email shortly.',
-        data: {
-          company,
-          newsletter,
-          contacts: contacts
-        }
-      });
-
+      
+      if (!response.ok) {
+        console.warn('Failed to start queue processor:', await response.text());
+      }
     } catch (error) {
-      console.error('Error in newsletter generation/sending process:', error);
-      return NextResponse.json(
-        { success: false, message: 'Failed to setup newsletter' },
-        { status: 500 }
-      );
+      console.warn('Error starting queue processor:', error);
+      // Don't throw here, as the trigger will handle it
     }
 
+    // Return success response
+    return NextResponse.json({
+      success: true,
+      company,
+      newsletter,
+      message: 'Onboarding completed successfully'
+    });
+
   } catch (error) {
-    console.error('Error in onboarding:', error);
+    console.error('Onboarding error:', error);
+    if (error instanceof APIError) {
+      return NextResponse.json(
+        { error: error.message },
+        { status: error.status }
+      );
+    }
     return NextResponse.json(
-      { 
-        success: false, 
-        message: error instanceof Error ? error.message : 'Failed to onboard company'
-      },
-      { status: error instanceof APIError ? error.status : 500 }
+      { error: 'An unexpected error occurred during onboarding' },
+      { status: 500 }
     );
   }
 }

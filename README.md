@@ -1,165 +1,144 @@
-# AI-Powered Newsletter Generator
+# Newsletter Generator App
 
-A modern, AI-powered newsletter generation system that creates personalized technology newsletters using OpenAI's GPT-4 and DALL-E for content and image generation. Features a robust queue-based generation system for reliable content creation.
+A powerful newsletter generation application that uses AI to create engaging content for your company newsletters.
 
 ## Features
 
-- 🤖 AI-powered content generation using GPT-4
-- 🎨 Automatic image generation with DALL-E
-- 📧 Email delivery via Brevo API
-- 📊 Progress tracking and status monitoring
-- 🔄 Queue-based generation system with retry mechanism
-- 🎯 Three customizable content sections:
-  - Welcome Message
-  - Industry Trends
-  - Practical Tips
-- 💾 Persistent storage with Supabase
-- 📈 Status tracking and error handling
-- 🔍 Generation progress monitoring
+- 🤖 AI-powered content generation
+- 📧 Automated email sending
+- 📊 Company and contact management
+- 🔄 Queue-based processing
+- 📝 Draft preview and testing
+- 🎯 Industry-specific content
+- 🖼️ AI-generated images
+- 📈 Status tracking
+
+## Tech Stack
+
+- **Frontend**: Next.js with TypeScript
+- **Backend**: Next.js API Routes
+- **Database**: Supabase (PostgreSQL)
+- **AI**: OpenAI GPT-4 & DALL-E 3
+- **Email**: Brevo (formerly Sendinblue)
+- **Queue**: Custom implementation with Supabase
 
 ## Getting Started
 
 ### Prerequisites
 
-- Node.js 18+
-- npm or yarn
-- Supabase account
-- OpenAI API key
-- Brevo API key
-
-### Environment Variables
-
-Create a `.env.local` file with the following variables:
-
-```env
-NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
-SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
-OPENAI_API_KEY=your_openai_api_key
-BREVO_API_KEY=your_brevo_api_key
-BREVO_SENDER_EMAIL=your_sender_email
-BREVO_SENDER_NAME=your_sender_name
-BASE_URL=your_base_url
-```
+1. Node.js 18 or higher
+2. npm or yarn
+3. Supabase account
+4. OpenAI API key
+5. Brevo API key
 
 ### Installation
 
 1. Clone the repository:
-   ```bash
-   git clone https://github.com/yourusername/newsletter-app.git
-   ```
+```bash
+git clone [repository-url]
+cd newsletter-app
+```
 
 2. Install dependencies:
-   ```bash
-   npm install
-   ```
+```bash
+npm install
+```
 
-3. Run the development server:
-   ```bash
-   npm run dev
-   ```
+3. Set up environment variables:
+Create a `.env.local` file with the following:
+```env
+OPENAI_API_KEY=your_openai_key
+SUPABASE_URL=your_supabase_url
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_key
+BREVO_API_KEY=your_brevo_key
+BREVO_SENDER_EMAIL=your_sender_email
+BREVO_SENDER_NAME=your_sender_name
+BASE_URL=your_app_url
+NODE_ENV=development
+```
 
-4. Open [http://localhost:3000](http://localhost:3000) in your browser
+4. Start the development server:
+```bash
+npm run dev
+```
 
-## API Endpoints
+5. Start the queue processor:
+```bash
+npm run process
+```
 
-### Newsletter Generation
-- `POST /api/newsletter/generate`: Queue a new newsletter generation
-- `GET /api/newsletter/status/[id]`: Check generation queue status
-- `POST /api/newsletter/send-draft/[id]`: Send a draft newsletter
-- `POST /api/newsletter/send`: Send newsletter to contacts
+## Project Structure
 
-### Company Management
-- `POST /api/onboarding`: Register new company
-- `GET /api/company/[id]/latest-newsletter`: Get company's latest newsletter
+```
+newsletter-app/
+├── app/                    # Next.js app directory
+│   ├── api/               # API routes
+│   └── ...                # Page components
+├── components/            # React components
+├── docs/                  # Documentation
+│   └── DATABASE_INDEXES.md # Database schema specification
+├── supabase/             # Database migrations and config
+│   └── migrations/       # SQL migration files
+├── scripts/              # Queue processor and utilities
+├── utils/                # Helper functions
+└── types/                # TypeScript types
+```
 
-### Contact Management
-- `POST /api/contacts/upload`: Upload contact list
+## Database Schema
 
-## Queue System
+The application uses Supabase with the following main tables:
+- `companies` - Company information and settings
+- `contacts` - Contact list management for each company
+- `newsletters` - Newsletter metadata and status tracking
+- `newsletter_sections` - Content sections for each newsletter
+- `newsletter_generation_queue` - Queue for processing newsletter sections
+- `image_generation_history` - Tracking for AI image generation
+- `industry_insights` - Industry-specific content storage
+- `csv_uploads` - Contact list import tracking
+- `compiled_newsletters` - Final newsletter storage
 
-The application uses a robust queue system for newsletter generation:
+For detailed schema information, including all indexes and constraints, see [DATABASE_INDEXES.md](./docs/DATABASE_INDEXES.md).
 
-1. **Queue Creation**
-   - Each newsletter section is queued separately
-   - Status tracking per section
-   - Retry mechanism for failed generations
+## Queue Processing
 
-2. **Status Tracking**
-   - `pending`: Initial state
-   - `in_progress`: Currently generating
-   - `completed`: Successfully generated
-   - `failed`: Generation failed
+The application uses a queue-based system for reliable newsletter generation:
+1. Newsletter creation triggers queue items for each section
+2. Queue processor picks up pending items
+3. GPT-4 generates content for each section
+4. DALL-E 3 creates relevant images
+5. Content is compiled into newsletter sections
+6. Email is formatted and sent using Brevo
+7. Status is tracked throughout the process
 
-3. **Error Handling**
-   - Automatic retries for failed generations
-   - Error message tracking
-   - Attempt counting
+## Newsletter Sections
 
-## Architecture
+Each newsletter contains three main sections:
+1. **Welcome Message**: Personalized company introduction
+2. **Industry Trends**: AI-generated industry insights
+3. **Practical Tips**: Actionable advice for the audience
 
-The application uses:
-- Next.js 14 for the framework
-- Supabase for database and authentication
-- OpenAI GPT-4 for content generation
-- DALL-E 3 for image generation
-- Brevo for email delivery
-- Queue-based system for reliable generation
+## Error Handling
 
-### Database Schema
-
-Key tables:
-- `newsletters`: Stores newsletter metadata
-- `newsletter_sections`: Individual content sections
-- `newsletter_generation_queue`: Generation queue status
-- `companies`: Company information
-- `contacts`: Contact list
-- `newsletter_contacts`: Newsletter-contact relationships
-
-## Current Development Status
-
-### Known Issues
-- Queue generation process requires further debugging
-- Intermittent failures in section and image generation
-- Need to improve error handling and retry mechanisms
-
-### Upcoming Improvements
-- Enhanced logging for queue generation
-- More robust error tracking
-- Implement more granular status monitoring
-
-### Debugging Notes
-- Verify queue initialization process
-- Check OpenAI and DALL-E API interaction
-- Review database transaction management
-
-## Project Status Update
-
-### Recent Improvements
-1. **OpenAI Handling**: Improved handling of OpenAI API calls with increased retries and exponential backoff. Added a 3-minute timeout for each call.
-2. **Delays**: Increased delays between sections to 15 minutes and added a 30-minute delay after errors to manage OpenAI capacity issues effectively.
-3. **Queue Initialization**: Enhanced queue initialization verification with extended retries and logging.
-4. **Error Handling**: Improved error logging and handling throughout the newsletter generation process.
-5. **New Feature**: Added support for customizable newsletter templates.
-6. **Bug Fix**: Resolved issue with duplicate newsletter generations.
+The system includes robust error handling:
+- Automatic retries for failed operations
+- Status tracking for each step
+- Detailed error logging
+- Queue item attempt counting
+- Proper cleanup of failed items
 
 ## Contributing
 
 1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-For detailed contribution guidelines, see [CONTRIBUTING.md](CONTRIBUTING.md)
+2. Create your feature branch
+3. Commit your changes
+4. Push to the branch
+5. Create a Pull Request
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details
+This project is licensed under the MIT License - see the LICENSE file for details.
 
-## Documentation
+## Support
 
-Additional documentation:
-- [Database Indexes](docs/DATABASE_INDEXES.md)
-- [Brevo Integration](docs/BREVO_INTEGRATION.md)
-- [Project Status](PROJECT_STATUS.md)
+For support, email [support-email] or create an issue in the repository.

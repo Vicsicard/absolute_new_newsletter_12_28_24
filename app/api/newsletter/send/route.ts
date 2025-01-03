@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { sendBulkEmails } from '@/utils/email';
+import { sendEmail } from '@/utils/email';
 import { getSupabaseAdmin } from '@/utils/supabase-admin';
 import type { 
   EmailContact, 
@@ -72,78 +72,83 @@ export async function POST(req: Request) {
       throw new APIError('No contact email found for company', 404);
     }
 
-    const emailContacts: EmailContact[] = [{
+    const emailContact: EmailContact = {
       email: typedNewsletter.company.contact_email,
       name: typedNewsletter.company.company_name || null
-    }];
-
-    // Send emails
-    const result = await sendBulkEmails(
-      emailContacts,
-      typedNewsletter.subject,
-      typedNewsletter.newsletter_sections
-        .filter(section => section.status === 'active')
-        .sort((a, b) => a.section_number - b.section_number)
-        .map(section => `
-          <h2>${section.title}</h2>
-          ${section.content}
-          ${section.image_url ? `<img src="${section.image_url}" alt="${section.title}">` : ''}
-        `).join('\n')
-    );
-
-    // Update newsletter status based on results
-    const updates = {
-      status: result.failed.length === 0 ? 'sent' : 'failed' as NewsletterStatus,
-      sent_count: result.successful.length,
-      failed_count: result.failed.length,
-      last_sent_status: result.failed.length === 0 
-        ? 'Successfully sent to all contacts' 
-        : `Failed to send to ${result.failed.length} contacts`,
-      sent_at: new Date().toISOString()
     };
 
-    const { error: updateError } = await supabaseAdmin
-      .from('newsletters')
-      .update(updates)
-      .eq('id', newsletterId);
+    // Generate HTML content
+    const htmlContent = typedNewsletter.newsletter_sections
+      .filter(section => section.status === 'active')
+      .sort((a, b) => a.section_number - b.section_number)
+      .map(section => `
+        <h2>${section.title}</h2>
+        ${section.content}
+        ${section.image_url ? `<img src="${section.image_url}" alt="${section.title}">` : ''}
+      `).join('\n');
 
-    if (updateError) {
-      throw new APIError('Failed to update newsletter status', 500);
-    }
+    // Send email
+    try {
+      const result = await sendEmail(
+        emailContact,
+        typedNewsletter.subject,
+        htmlContent
+      );
 
-    return NextResponse.json({
-      success: true,
-      message: 'Newsletter sent successfully',
-      data: {
-        sent: result.successful.length,
-        failed: result.failed.length
+      // Update newsletter status
+      const { error: updateError } = await supabaseAdmin
+        .from('newsletters')
+        .update({ 
+          status: 'sent' as NewsletterStatus,
+          sent_count: 1,
+          failed_count: 0,
+          last_sent_status: 'Successfully sent to contact',
+          sent_at: result.sent_at,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', newsletterId);
+
+      if (updateError) {
+        throw new APIError('Failed to update newsletter status after sending', 500);
       }
-    });
 
+      return NextResponse.json({
+        success: true,
+        message: 'Newsletter sent successfully',
+        data: {
+          messageId: result.messageId,
+          sent_at: result.sent_at
+        }
+      });
+    } catch (error) {
+      // Update newsletter status to failed
+      const { error: updateError } = await supabaseAdmin
+        .from('newsletters')
+        .update({ 
+          status: 'failed' as NewsletterStatus,
+          sent_count: 0,
+          failed_count: 1,
+          last_sent_status: error instanceof Error ? error.message : 'Failed to send newsletter',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', newsletterId);
+
+      if (updateError) {
+        console.error('Failed to update newsletter status after error:', updateError);
+      }
+
+      throw error;
+    }
   } catch (error) {
     console.error('Error sending newsletter:', error);
 
-    // If we have a newsletter ID, update its status to failed
-    if (newsletterId) {
-      await supabaseAdmin
-        .from('newsletters')
-        .update({
-          status: 'failed' as NewsletterStatus,
-          last_sent_status: error instanceof APIError ? error.message : 'Unknown error occurred'
-        })
-        .eq('id', newsletterId);
-    }
-
     if (error instanceof APIError) {
-      return NextResponse.json({
-        success: false,
-        message: error.message
-      }, { status: error.statusCode });
+      throw error;
     }
 
-    return NextResponse.json({
-      success: false,
-      message: 'An unexpected error occurred'
-    }, { status: 500 });
+    throw new APIError(
+      error instanceof Error ? error.message : 'Failed to send newsletter',
+      500
+    );
   }
 }

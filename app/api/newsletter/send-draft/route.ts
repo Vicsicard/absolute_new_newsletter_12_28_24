@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { sendBulkEmails, validateEmail } from '@/utils/email';
+import { sendEmail, validateEmail } from '@/utils/email';
 import { generateEmailHTML } from '@/utils/email-template';
 import { getSupabaseAdmin } from '@/utils/supabase-admin';
 import type { 
@@ -95,59 +95,65 @@ export async function POST(request: Request) {
 
     // Send draft to test recipient
     console.log('Sending draft to:', typedNewsletter.draft_recipient_email);
-    let result;
     try {
-      result = await sendBulkEmails(
-        [{
-          email: typedNewsletter.draft_recipient_email!, // We've already checked it's not null above
-          name: null // Match database schema where name is optional
-        }],
+      // At this point we know draft_recipient_email is not null due to checks above
+      const result = await sendEmail(
+        {
+          email: typedNewsletter.draft_recipient_email!, // Assert non-null
+          name: null
+        },
         typedNewsletter.subject,
         htmlContent
       );
-      console.log('Email sending result:', result);
+
+      // Update draft status
+      const { error: updateError } = await supabaseAdmin
+        .from('newsletters')
+        .update({ 
+          draft_status: 'sent' as DraftStatus,
+          draft_sent_at: result.sent_at,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', newsletterId);
+
+      if (updateError) {
+        throw new APIError('Failed to update draft status', 500);
+      }
+
+      return NextResponse.json({
+        success: true,
+        message: 'Draft sent successfully',
+        data: {
+          messageId: result.messageId,
+          sent_at: result.sent_at
+        }
+      });
     } catch (error) {
-      console.error('Failed to send draft email:', error);
-      throw new APIError('Failed to send draft email', 500);
+      // Update draft status to failed
+      const { error: updateError } = await supabaseAdmin
+        .from('newsletters')
+        .update({ 
+          draft_status: 'failed' as DraftStatus,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', newsletterId);
+
+      if (updateError) {
+        console.error('Failed to update draft status after error:', updateError);
+      }
+
+      throw error;
     }
-
-    // Update newsletter status
-    const hasErrors = result.failed.length > 0;
-    const updates = {
-      draft_status: hasErrors ? 'failed' : 'sent' as DraftStatus,
-      draft_sent_at: hasErrors ? null : new Date().toISOString(),
-      last_sent_status: hasErrors ? `Error: ${result.failed[0]?.error || 'Unknown error'}` : 'success',
-      status: hasErrors ? 'draft' : 'draft_sent' as NewsletterStatus
-    };
-
-    console.log('Updating newsletter status:', updates);
-    const { error: updateError } = await supabaseAdmin
-      .from('newsletters')
-      .update(updates)
-      .eq('id', newsletterId);
-
-    if (updateError) {
-      console.error('Error updating newsletter status:', updateError);
-      throw new APIError('Failed to update newsletter status', 500);
-    }
-
-    return NextResponse.json({
-      success: true,
-      message: 'Draft sent successfully',
-      data: result
-    });
-
   } catch (error) {
     console.error('Error sending draft:', error);
+
     if (error instanceof APIError) {
-      return NextResponse.json({
-        success: false,
-        message: error.message
-      }, { status: error.statusCode });
+      throw error;
     }
-    return NextResponse.json({
-      success: false,
-      message: 'Internal server error'
-    }, { status: 500 });
+
+    throw new APIError(
+      error instanceof Error ? error.message : 'Failed to send draft',
+      500
+    );
   }
 }

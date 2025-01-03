@@ -124,11 +124,12 @@ async function checkHealthAndRecover() {
 }
 
 async function acquireNextQueueItem(): Promise<QueueItem | null> {
-  // Get the next pending item
+  // Get the next pending item, respecting priority
   const { data: items, error: queryError } = await supabase
     .from('newsletter_generation_queue')
     .select('*')
     .eq('status', 'pending')
+    .order('priority', { ascending: true })
     .order('created_at', { ascending: true })
     .limit(1);
 

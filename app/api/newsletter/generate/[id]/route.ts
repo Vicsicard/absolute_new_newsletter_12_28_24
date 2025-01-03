@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { generateNewsletter } from '@/utils/newsletter';
 import { sendNewsletterDraft } from '@/utils/newsletter-draft';
 import { DatabaseError, APIError } from '@/utils/errors';
+import { getSupabaseAdmin } from '@/utils/supabase-admin';
+import { initializeGenerationQueue } from '@/utils/newsletter';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -14,25 +16,40 @@ export async function POST(
   try {
     console.log('Generating newsletter for ID:', params.id);
     
-    // Get recipient email from request body
-    const body = await request.json();
-    const recipientEmail = body.recipientEmail;
+    // Get newsletter details including recipient email
+    const supabase = getSupabaseAdmin();
+    const { data: newsletter, error: newsletterError } = await supabase
+      .from('newsletters')
+      .select('*')
+      .eq('id', params.id)
+      .single();
 
-    if (!recipientEmail) {
+    if (newsletterError || !newsletter) {
       return NextResponse.json(
-        { success: false, message: 'Recipient email is required' },
+        { success: false, message: 'Newsletter not found' },
+        { status: 404 }
+      );
+    }
+
+    if (!newsletter.draft_recipient_email) {
+      return NextResponse.json(
+        { success: false, message: 'No draft recipient email set for this newsletter' },
         { status: 400 }
       );
     }
     
+    // Initialize the generation queue
+    await initializeGenerationQueue(params.id, supabase);
+    
+    // Start generation process
     const sections = await generateNewsletter(params.id);
     
     console.log('Generated sections:', sections);
 
-    // Now send the draft email with the provided recipient email
-    console.log('Sending draft email to:', recipientEmail);
+    // Send draft to the newsletter's draft_recipient_email
+    console.log('Sending draft email to:', newsletter.draft_recipient_email);
     try {
-      const result = await sendNewsletterDraft(params.id, recipientEmail);
+      const result = await sendNewsletterDraft(params.id, newsletter.draft_recipient_email);
       console.log('Draft sent successfully:', result);
       
       return NextResponse.json({
@@ -40,7 +57,7 @@ export async function POST(
         sections,
         draft: {
           sent: true,
-          recipientEmail,
+          recipientEmail: newsletter.draft_recipient_email,
           result
         }
       });

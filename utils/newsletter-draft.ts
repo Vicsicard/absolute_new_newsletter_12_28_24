@@ -1,4 +1,4 @@
-import { sendBulkEmails, validateEmail } from '@/utils/email';
+import { sendEmail, validateEmail } from '@/utils/email';
 import { generateEmailHTML } from '@/utils/email-template';
 import { getSupabaseAdmin } from '@/utils/supabase-admin';
 import type { 
@@ -13,8 +13,8 @@ interface SendNewsletterDraftResult {
   success: boolean;
   message: string;
   data?: {
-    successful: string[];
-    failed: Array<{ email: string; error: string }>;
+    messageId: string;
+    sent_at: string;
   };
 }
 
@@ -102,11 +102,11 @@ export async function sendNewsletterDraft(newsletterId: string, recipientEmail?:
 
     // Send draft to test recipient
     console.log('Sending draft to:', targetEmail);
-    const result = await sendBulkEmails(
-      [{
+    const result = await sendEmail(
+      {
         email: targetEmail,
         name: null // Match database schema where name is optional
-      }],
+      },
       typedNewsletter.subject,
       htmlContent
     );
@@ -114,13 +114,12 @@ export async function sendNewsletterDraft(newsletterId: string, recipientEmail?:
     console.log('Email sending result:', result);
 
     // Update newsletter status based on database constraints
-    const hasErrors = result.failed.length > 0;
     const updates = {
-      draft_status: hasErrors ? 'failed' : 'sent' as DraftStatus,
-      draft_sent_at: hasErrors ? null : new Date().toISOString(),
-      last_sent_status: hasErrors ? `Error: ${result.failed[0]?.error || 'Unknown error'}` : 'success',
+      draft_status: 'sent' as DraftStatus,
+      draft_sent_at: result.sent_at,
+      last_sent_status: 'success',
       // Status should be 'draft' or 'ready_to_send' based on database constraints
-      status: hasErrors ? 'draft' : 'ready_to_send' as NewsletterStatus,
+      status: 'ready_to_send' as NewsletterStatus,
       updated_at: new Date().toISOString()
     };
 

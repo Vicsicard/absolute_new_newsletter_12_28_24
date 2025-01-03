@@ -44,6 +44,42 @@ interface Newsletter {
   updated_at: string;
 }
 
+const MAX_RETRIES = 3;
+const TIMEOUT_MINUTES = 15;
+
+async function handleStalledItems(queueItem: QueueItem) {
+  console.log(`Found stalled item: ${queueItem.id}`);
+  const { error } = await supabase
+    .from('newsletter_generation_queue')
+    .update({
+      status: 'failed',
+      error_message: 'Operation timed out',
+      updated_at: new Date().toISOString()
+    })
+    .eq('id', queueItem.id);
+
+  if (error) {
+    console.error('Failed to update stalled item:', error);
+  }
+}
+
+async function retryFailedItem(queueItem: QueueItem) {
+  console.log(`Retrying failed item: ${queueItem.id}`);
+  const { error } = await supabase
+    .from('newsletter_generation_queue')
+    .update({
+      status: 'pending',
+      attempts: queueItem.attempts + 1,
+      error_message: null,
+      updated_at: new Date().toISOString()
+    })
+    .eq('id', queueItem.id);
+
+  if (error) {
+    console.error('Failed to retry item:', error);
+  }
+}
+
 async function monitorQueue() {
   try {
     // Get all active newsletters (not in final states)
@@ -88,35 +124,50 @@ async function monitorQueue() {
       console.log(`Created: ${new Date(newsletter.created_at).toLocaleString()}`);
       console.log(`Status: ${newsletter.status.toUpperCase()}`);
 
+      // Process each queue item
+      for (const item of queueItems) {
+        // Check for stalled items
+        if (item.status === 'in_progress') {
+          const stalledTime = new Date().getTime() - new Date(item.updated_at).getTime();
+          if (stalledTime > TIMEOUT_MINUTES * 60 * 1000) {
+            await handleStalledItems(item);
+          }
+        }
+
+        // Handle failed items that can be retried
+        if (item.status === 'failed' && item.attempts < MAX_RETRIES) {
+          await retryFailedItem(item);
+        }
+      }
+
       // Calculate statistics
       const total = queueItems.length;
-      const completed = queueItems.filter((item: any) => item.status === 'completed').length;
-      const failed = queueItems.filter((item: any) => item.status === 'failed').length;
-      const inProgress = queueItems.filter((item: any) => item.status === 'in_progress').length;
-      const pending = queueItems.filter((item: any) => item.status === 'pending').length;
+      const completed = queueItems.filter(item => item.status === 'completed').length;
+      const failed = queueItems.filter(item => item.status === 'failed').length;
+      const inProgress = queueItems.filter(item => item.status === 'in_progress').length;
+      const pending = queueItems.filter(item => item.status === 'pending').length;
+      const stalled = queueItems.filter(item => 
+        item.status === 'in_progress' && 
+        new Date().getTime() - new Date(item.updated_at).getTime() > TIMEOUT_MINUTES * 60 * 1000
+      ).length;
 
       console.log(`Progress: ${completed}/${total} sections completed`);
       console.log(`- Completed: ${completed}`);
       console.log(`- Failed: ${failed}`);
       console.log(`- In Progress: ${inProgress}`);
       console.log(`- Pending: ${pending}`);
+      console.log(`- Stalled: ${stalled}`);
 
-      // Show detailed status for each section
-      console.log('\nDetailed Section Status:');
-      queueItems.forEach((item: any) => {
-        const status = item.status.toUpperCase().padEnd(11);
-        const attempts = `(${item.attempts} attempts)`.padEnd(13);
-        console.log(`${item.section_type}: ${status} ${attempts}`);
-        
-        if (item.error_message) {
-          console.log(`  Error: ${item.error_message}`);
-        }
-      });
-
-      console.log('\n' + '-'.repeat(50) + '\n');
+      if (failed > 0) {
+        const failedItems = queueItems.filter(item => item.status === 'failed');
+        console.log('\nFailed items:');
+        failedItems.forEach(item => {
+          console.log(`- Section ${item.section_type}: ${item.error_message || 'No error message'} (Attempts: ${item.attempts}/${MAX_RETRIES})`);
+        });
+      }
     }
   } catch (error) {
-    console.error('Error in queue monitor:', error);
+    console.error('Unexpected error in queue monitor:', error);
   }
 }
 

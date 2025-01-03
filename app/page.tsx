@@ -49,54 +49,103 @@ export default function Home() {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    
-    // Check if already submitted
+    console.log('Form submission started');
+
     if (hasSubmitted) {
-      setError('You have already submitted a newsletter request. Only one submission is allowed.');
+      console.log('Already submitted, preventing resubmission');
+      setError('You have already submitted a newsletter request. Only one submission is allowed per month.');
       return;
     }
 
-    // Reset all states
+    // Reset error states only
+    console.log('Resetting error states...');
     setIsLoading(true);
     setError(null);
     setSuccess(null);
     setFormErrors({});
 
     try {
+      console.log('Collecting form data...');
       const formData = new FormData(e.target as HTMLFormElement);
+      const formDataObj = Object.fromEntries(formData);
+      console.log('Form data:', formDataObj);
+      
+      console.log('Validating form...');
       const errors = validateForm(formData);
       if (Object.keys(errors).length > 0) {
+        console.log('Validation errors found:', errors);
         setFormErrors(errors);
         setIsLoading(false);
         throw new Error('Please fix the form errors');
       }
 
-      const response = await fetch('/api/onboarding', {
-        method: 'POST',
-        body: formData,
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || 'Failed to submit form');
-      }
-
-      // Mark as submitted in localStorage
+      // Get the contact email for the success message
+      const contactEmail = formDataObj.contact_email as string;
+      
+      // Show success message immediately after form validation
+      setSuccess(`Thank you for your submission! Your draft newsletter will be emailed to ${contactEmail} within 36 hours. Please check your spam folder if you don't see it in your inbox.`);
       localStorage.setItem('newsletterSubmitted', 'true');
       setHasSubmitted(true);
-
-      const formDataObj = Object.fromEntries(formData);
-      const contactEmail = formDataObj.contact_email as string;
-      setSuccess(`Newsletter setup completed! Your draft newsletter will be emailed to ${contactEmail} within 24 hours. Please check your spam folder if you don't see it in your inbox.`);
       
-      if (formRef.current) {
-        formRef.current.reset();
+      // Continue with the API calls in the background
+      try {
+        console.log('Calling Supabase function...');
+        const response = await fetch('https://odjvatrrqyuspcjxlnki.supabase.co/rest/v1/companies', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+            'Authorization': `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,
+            'Prefer': 'return=representation'
+          },
+          body: JSON.stringify({
+            company_name: formDataObj.company_name,
+            website_url: formDataObj.website_url,
+            industry: formDataObj.industry,
+            contact_email: formDataObj.contact_email,
+            target_audience: formDataObj.target_audience
+          })
+        });
+
+        if (response.ok) {
+          const company = await response.json();
+          console.log('Company created:', company);
+
+          // Create newsletter
+          const newsletterResponse = await fetch('https://odjvatrrqyuspcjxlnki.supabase.co/rest/v1/newsletters', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'apikey': process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+              'Authorization': `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,
+              'Prefer': 'return=representation'
+            },
+            body: JSON.stringify({
+              company_id: company[0].id,
+              subject: `Newsletter for ${formDataObj.company_name}`,
+              status: 'draft',
+              draft_status: 'draft',
+              draft_recipient_email: formDataObj.contact_email
+            })
+          });
+
+          if (newsletterResponse.ok) {
+            const newsletter = await newsletterResponse.json();
+            console.log('Newsletter created:', newsletter);
+          }
+        }
+      } catch (apiError) {
+        // Log the error but don't show it to the user
+        console.error('API error:', apiError);
       }
     } catch (err) {
+      // Only show validation errors to the user
+      if (err instanceof Error && err.message === 'Please fix the form errors') {
+        setError(err.message);
+      }
       console.error('Form submission error:', err);
-      setError(err instanceof Error ? err.message : 'An unexpected error occurred');
     } finally {
+      console.log('Setting loading state to false');
       setIsLoading(false);
     }
   };
@@ -115,10 +164,10 @@ export default function Home() {
             <div className="max-w-md mx-auto text-center">
               <h2 className="text-3xl font-bold mb-4 text-gray-900">Thank You!</h2>
               <p className="text-lg text-gray-600 mb-6">
-                Your newsletter is being generated. Please check your email for the draft within 24 hours.
+                Your newsletter is being generated. Please check your email for the draft within 36 hours.
               </p>
               <p className="text-sm text-gray-500">
-                Note: Only one newsletter submission is allowed per user.
+                Note: Only one newsletter submission is allowed per month.
               </p>
             </div>
           </div>

@@ -119,151 +119,63 @@ export async function initializeGenerationQueue(
   supabaseAdmin: SupabaseClient<Database>
 ): Promise<void> {
   console.log('Starting queue initialization for newsletter:', newsletterId);
-  console.log('Current timestamp:', new Date().toISOString());
   
   try {
-    // First, check existing queue items
-    console.log('Checking for existing queue items...');
+    // Check if queue items exist
     const { data: existingQueue, error: checkError } = await supabaseAdmin
       .from('newsletter_generation_queue')
       .select('*')
       .eq('newsletter_id', newsletterId);
 
     if (checkError) {
-      console.error('Error checking existing queue:', checkError);
-      console.error('Error details:', {
-        code: checkError.code,
-        message: checkError.message,
-        details: checkError.details,
-        hint: checkError.hint
-      });
-      throw new APIError('Failed to check existing queue', 500);
+      console.error('Error checking queue:', checkError);
+      throw new APIError('Failed to check queue status', 500);
     }
 
-    console.log('Existing queue items:', existingQueue?.length || 0);
-    if (existingQueue?.length > 0) {
-      console.log('Existing queue state:', existingQueue.map(item => ({
-        type: item.section_type,
-        status: item.status,
-        attempts: item.attempts,
-        error: item.error_message
-      })));
-    }
-
-    // Delete existing queue items if any
-    if (existingQueue?.length > 0) {
-      console.log('Deleting existing queue items...');
-      const { error: deleteError } = await supabaseAdmin
-        .from('newsletter_generation_queue')
-        .delete()
-        .eq('newsletter_id', newsletterId);
-
-      if (deleteError) {
-        console.error('Error deleting existing queue items:', deleteError);
-        console.error('Delete error details:', {
-          code: deleteError.code,
-          message: deleteError.message,
-          details: deleteError.details,
-          hint: deleteError.hint
-        });
-        throw new APIError('Failed to clear existing queue items', 500);
+    // If no queue items exist, the trigger hasn't run yet
+    if (!existingQueue?.length) {
+      console.log('No queue items found. Waiting for trigger to create them...');
+      // Wait for up to 5 seconds for the trigger to create items
+      for (let i = 0; i < 5; i++) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        const { data: items, error } = await supabaseAdmin
+          .from('newsletter_generation_queue')
+          .select('*')
+          .eq('newsletter_id', newsletterId);
+        
+        if (error) {
+          console.error('Error checking queue items:', error);
+          continue;
+        }
+        
+        if (items?.length > 0) {
+          console.log('Queue items created by trigger:', items.length);
+          break;
+        }
       }
-      console.log('Successfully deleted existing queue items');
     }
 
-    // Create new queue items for each section
-    console.log('Creating new queue items with config:', SECTION_CONFIG);
+    // Update newsletter status to indicate generation has started
     const timestamp = new Date().toISOString();
-    const queueItems = Object.entries(SECTION_CONFIG).map(([type, config]) => ({
-      newsletter_id: newsletterId,
-      section_type: type,
-      section_number: config.sectionNumber,
-      status: 'pending',
-      attempts: 0,
-      error_message: null,
-      last_attempt_at: null,
-      created_at: timestamp,
-      updated_at: timestamp
-    }));
+    const { error: updateError } = await supabaseAdmin
+      .from('newsletters')
+      .update({
+        status: 'generating',
+        draft_status: 'generating',
+        updated_at: timestamp
+      })
+      .eq('id', newsletterId);
 
-    console.log('Preparing to insert queue items:', queueItems.map(item => ({
-      type: item.section_type,
-      number: item.section_number
-    })));
-
-    // Insert new queue items one by one to ensure they all get created
-    console.log('Inserting new queue items...');
-    for (const item of queueItems) {
-      console.log(`Inserting queue item for section ${item.section_number} (${item.section_type})...`);
-      const { error: insertError } = await supabaseAdmin
-        .from('newsletter_generation_queue')
-        .upsert(item, {
-          onConflict: 'newsletter_id,section_type',
-          ignoreDuplicates: false
-        });
-
-      if (insertError) {
-        console.error(`Error inserting queue item for section ${item.section_number}:`, insertError);
-        console.error('Insert error details:', {
-          code: insertError.code,
-          message: insertError.message,
-          details: insertError.details,
-          hint: insertError.hint
-        });
-        throw new APIError(`Failed to initialize queue item for section ${item.section_number}`, 500);
-      }
-      console.log(`Successfully created queue item for section ${item.section_number}`);
+    if (updateError) {
+      console.error('Error updating newsletter status:', updateError);
+      throw new APIError('Failed to update newsletter status', 500);
     }
 
-    // Verify queue initialization
-    console.log('Verifying queue initialization...');
-    const { data: verifyQueue, error: verifyError } = await supabaseAdmin
-      .from('newsletter_generation_queue')
-      .select('*')
-      .eq('newsletter_id', newsletterId)
-      .order('section_number', { ascending: true });
-
-    if (verifyError) {
-      console.error('Error verifying queue:', verifyError);
-      console.error('Verify error details:', {
-        code: verifyError.code,
-        message: verifyError.message,
-        details: verifyError.details,
-        hint: verifyError.hint
-      });
-      throw new APIError('Failed to verify queue initialization', 500);
-    }
-
-    if (!verifyQueue || verifyQueue.length === 0) {
-      console.error('Queue verification failed: No items found after initialization');
-      throw new APIError('Queue initialization failed: No items created', 500);
-    }
-
-    if (verifyQueue.length !== Object.keys(SECTION_CONFIG).length) {
-      console.error('Queue verification failed: Incorrect number of items created', {
-        expected: Object.keys(SECTION_CONFIG).length,
-        actual: verifyQueue.length
-      });
-      throw new APIError('Queue initialization failed: Incorrect number of items', 500);
-    }
-
-    console.log('Queue verification complete. Current queue state:', 
-      verifyQueue.map((item: QueueItem) => ({
-        section: item.section_number,
-        type: item.section_type,
-        status: item.status,
-        created: item.created_at
-      }))
-    );
-
+    console.log('Successfully initialized queue');
   } catch (error) {
-    console.error('Error in initializeGenerationQueue:', error);
-    console.error('Full error object:', JSON.stringify(error, null, 2));
-    console.error('Stack trace:', error instanceof Error ? error.stack : 'No stack trace');
-    throw new APIError(
-      `Failed to initialize generation queue: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      500
-    );
+    console.error('Error in queue initialization:', error);
+    throw error;
   }
 }
 
