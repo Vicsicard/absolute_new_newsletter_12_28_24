@@ -25,15 +25,17 @@ export async function POST(
       .single();
 
     if (newsletterError || !newsletter) {
+      console.error('Newsletter not found:', newsletterError);
       return NextResponse.json(
-        { success: false, message: 'Newsletter not found' },
+        { success: false },
         { status: 404 }
       );
     }
 
     if (!newsletter.draft_recipient_email) {
+      console.error('No draft recipient email set');
       return NextResponse.json(
-        { success: false, message: 'No draft recipient email set for this newsletter' },
+        { success: false },
         { status: 400 }
       );
     }
@@ -49,41 +51,23 @@ export async function POST(
     // Send draft to the newsletter's draft_recipient_email
     console.log('Sending draft email to:', newsletter.draft_recipient_email);
     try {
-      const result = await sendNewsletterDraft(params.id, newsletter.draft_recipient_email);
-      console.log('Draft sent successfully:', result);
+      await sendNewsletterDraft(newsletter.id, newsletter.draft_recipient_email);
       
       return NextResponse.json({
         success: true,
-        sections,
-        draft: {
-          sent: true,
-          recipientEmail: newsletter.draft_recipient_email,
-          result
-        }
+        message: 'Newsletter generation started'
       });
     } catch (error) {
       console.error('Error sending draft:', error);
-      return NextResponse.json({
-        success: true,
-        sections,
-        draft: {
-          sent: false,
-          error: error instanceof Error ? error.message : 'Failed to send draft'
-        }
-      });
+      return NextResponse.json(
+        { success: false },
+        { status: 500 }
+      );
     }
   } catch (error) {
     console.error('Error generating newsletter:', error);
-    
-    if (error instanceof DatabaseError) {
-      return NextResponse.json(
-        { success: false, message: error.message },
-        { status: 400 }
-      );
-    }
-
     return NextResponse.json(
-      { success: false, message: 'Failed to generate newsletter' },
+      { success: false },
       { status: 500 }
     );
   }

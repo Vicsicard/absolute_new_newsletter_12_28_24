@@ -14,7 +14,11 @@ export async function POST(req: Request) {
     const { company_id, email, name } = await req.json();
 
     if (!company_id || !email) {
-      throw new APIError('Missing required fields: company_id and email are required', 400);
+      console.error('Missing required fields');
+      return NextResponse.json(
+        { success: false },
+        { status: 400 }
+      );
     }
 
     // Check if contact already exists
@@ -26,7 +30,11 @@ export async function POST(req: Request) {
       .single();
 
     if (existingError && existingError.code !== 'PGRST116') { // PGRST116 is "no rows returned"
-      throw new APIError('Error checking existing contact', 500);
+      console.error('Error checking existing contact:', existingError);
+      return NextResponse.json(
+        { success: false },
+        { status: 500 }
+      );
     }
 
     if (existingContact) {
@@ -41,7 +49,11 @@ export async function POST(req: Request) {
         .eq('id', existingContact.id);
 
       if (updateError) {
-        throw new APIError('Failed to update contact', 500);
+        console.error('Error updating contact:', updateError);
+        return NextResponse.json(
+          { success: false },
+          { status: 500 }
+        );
       }
 
       return NextResponse.json({
@@ -67,7 +79,11 @@ export async function POST(req: Request) {
       .single();
 
     if (createError) {
-      throw new APIError('Failed to create contact', 500);
+      console.error('Error creating contact:', createError);
+      return NextResponse.json(
+        { success: false },
+        { status: 500 }
+      );
     }
 
     return NextResponse.json({
@@ -76,15 +92,9 @@ export async function POST(req: Request) {
     });
 
   } catch (error) {
-    if (error instanceof APIError) {
-      return NextResponse.json(
-        { success: false, message: error.message },
-        { status: error.status }
-      );
-    }
-
+    console.error('Error in contacts route:', error);
     return NextResponse.json(
-      { success: false, message: 'Internal server error' },
+      { success: false },
       { status: 500 }
     );
   }

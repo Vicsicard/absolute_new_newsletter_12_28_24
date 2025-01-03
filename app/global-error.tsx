@@ -10,30 +10,15 @@ export default function GlobalError({
   reset: () => void
 }) {
   useEffect(() => {
-    // Log the error to an error reporting service
+    // Only log the error, don't show it to the user
     console.error('Global error:', error)
-  }, [error])
+    // Automatically reset after a short delay
+    const timer = setTimeout(() => {
+      reset()
+    }, 100)
+    return () => clearTimeout(timer)
+  }, [error, reset])
 
-  return (
-    <html>
-      <body>
-        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-          <div className="max-w-md w-full p-6 bg-white rounded-lg shadow-lg">
-            <h2 className="text-2xl font-bold text-red-600 mb-4">
-              Something went wrong!
-            </h2>
-            <p className="text-gray-600 mb-4">
-              We apologize for the inconvenience. Please try again later.
-            </p>
-            <button
-              onClick={reset}
-              className="w-full bg-blue-500 text-white py-2 px-4 rounded hover:bg-blue-600 transition-colors"
-            >
-              Try again
-            </button>
-          </div>
-        </div>
-      </body>
-    </html>
-  )
+  // Return null instead of error UI
+  return null
 }

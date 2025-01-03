@@ -17,7 +17,7 @@ export async function GET(
 
     if (!companyId) {
       return NextResponse.json(
-        { success: false, message: 'Company ID is required' },
+        { success: false },
         { status: 400 }
       );
     }
@@ -44,16 +44,17 @@ export async function GET(
       .single();
 
     if (error) {
-      console.error('Error fetching newsletter:', error);
+      console.error('Error fetching latest newsletter:', error);
       return NextResponse.json(
-        { success: false, message: error.message },
+        { success: false },
         { status: 500 }
       );
     }
 
     if (!newsletter) {
+      console.error('No newsletter found for company ID:', companyId);
       return NextResponse.json(
-        { success: false, message: 'No newsletter found' },
+        { success: false },
         { status: 404 }
       );
     }
@@ -72,10 +73,7 @@ export async function GET(
   } catch (error) {
     console.error('Error in latest-newsletter route:', error);
     return NextResponse.json(
-      {
-        success: false,
-        message: error instanceof Error ? error.message : 'Internal server error'
-      },
+      { success: false },
       { status: 500 }
     );
   }

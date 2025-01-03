@@ -5,13 +5,11 @@ import { useRouter } from 'next/navigation';
 import { validateForm } from '@/utils/validation';
 import LoadingModal from '@/components/LoadingModal';
 import SuccessModal from '@/components/SuccessModal';
-import ErrorModal from '@/components/ErrorModal';
 import { FormErrors } from '@/types/form';
 
 export default function Home() {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [email, setEmail] = useState('');
   const [formErrors, setFormErrors] = useState<FormErrors>({});
@@ -53,44 +51,58 @@ export default function Home() {
 
     if (hasSubmitted) {
       console.log('Already submitted, preventing resubmission');
-      setError('You have already submitted a newsletter request. Only one submission is allowed per month.');
       return;
     }
 
-    // Reset error states only
-    console.log('Resetting error states...');
+    // Validate form before proceeding
+    const formData = new FormData(e.target as HTMLFormElement);
+    const errors = validateForm(formData);
+    if (Object.keys(errors).length > 0) {
+      console.log('Validation errors found:', errors);
+      setFormErrors(errors);
+      return;
+    }
+
+    // Reset states and show success immediately after validation
+    console.log('Form validated, proceeding with submission');
     setIsLoading(true);
-    setError(null);
-    setSuccess(null);
     setFormErrors({});
-
+    
+    // Get the contact email for the success message
+    const formDataObj = Object.fromEntries(formData);
+    const contactEmail = formDataObj.contact_email as string;
+    
+    // Show success message immediately after validation
+    setSuccess(`Thank you for your submission! Your draft newsletter will be emailed to ${contactEmail} within 36 hours. Please check your spam folder if you don't see it in your inbox.`);
+    localStorage.setItem('newsletterSubmitted', 'true');
+    setHasSubmitted(true);
+    
+    // Continue with the API calls in the background
     try {
-      console.log('Collecting form data...');
-      const formData = new FormData(e.target as HTMLFormElement);
-      const formDataObj = Object.fromEntries(formData);
-      console.log('Form data:', formDataObj);
-      
-      console.log('Validating form...');
-      const errors = validateForm(formData);
-      if (Object.keys(errors).length > 0) {
-        console.log('Validation errors found:', errors);
-        setFormErrors(errors);
-        setIsLoading(false);
-        throw new Error('Please fix the form errors');
-      }
+      console.log('Calling Supabase function...');
+      const response = await fetch('https://odjvatrrqyuspcjxlnki.supabase.co/rest/v1/companies', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+          'Authorization': `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,
+          'Prefer': 'return=representation'
+        },
+        body: JSON.stringify({
+          company_name: formDataObj.company_name,
+          website_url: formDataObj.website_url,
+          industry: formDataObj.industry,
+          contact_email: formDataObj.contact_email,
+          target_audience: formDataObj.target_audience
+        })
+      });
 
-      // Get the contact email for the success message
-      const contactEmail = formDataObj.contact_email as string;
-      
-      // Show success message immediately after form validation
-      setSuccess(`Thank you for your submission! Your draft newsletter will be emailed to ${contactEmail} within 36 hours. Please check your spam folder if you don't see it in your inbox.`);
-      localStorage.setItem('newsletterSubmitted', 'true');
-      setHasSubmitted(true);
-      
-      // Continue with the API calls in the background
-      try {
-        console.log('Calling Supabase function...');
-        const response = await fetch('https://odjvatrrqyuspcjxlnki.supabase.co/rest/v1/companies', {
+      if (response.ok) {
+        const company = await response.json();
+        console.log('Company created:', company);
+
+        // Create newsletter
+        const newsletterResponse = await fetch('https://odjvatrrqyuspcjxlnki.supabase.co/rest/v1/newsletters', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -99,59 +111,32 @@ export default function Home() {
             'Prefer': 'return=representation'
           },
           body: JSON.stringify({
-            company_name: formDataObj.company_name,
-            website_url: formDataObj.website_url,
-            industry: formDataObj.industry,
-            contact_email: formDataObj.contact_email,
-            target_audience: formDataObj.target_audience
+            company_id: company[0].id,
+            subject: `Newsletter for ${formDataObj.company_name}`,
+            status: 'draft',
+            draft_status: 'draft',
+            draft_recipient_email: formDataObj.contact_email
           })
         });
 
-        if (response.ok) {
-          const company = await response.json();
-          console.log('Company created:', company);
-
-          // Create newsletter
-          const newsletterResponse = await fetch('https://odjvatrrqyuspcjxlnki.supabase.co/rest/v1/newsletters', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'apikey': process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-              'Authorization': `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,
-              'Prefer': 'return=representation'
-            },
-            body: JSON.stringify({
-              company_id: company[0].id,
-              subject: `Newsletter for ${formDataObj.company_name}`,
-              status: 'draft',
-              draft_status: 'draft',
-              draft_recipient_email: formDataObj.contact_email
-            })
-          });
-
-          if (newsletterResponse.ok) {
-            const newsletter = await newsletterResponse.json();
-            console.log('Newsletter created:', newsletter);
-          }
+        if (newsletterResponse.ok) {
+          const newsletter = await newsletterResponse.json();
+          console.log('Newsletter created:', newsletter);
+        } else {
+          console.error('Failed to create newsletter:', await newsletterResponse.text());
         }
-      } catch (apiError) {
-        // Log the error but don't show it to the user
-        console.error('API error:', apiError);
+      } else {
+        console.error('Failed to create company:', await response.text());
       }
-    } catch (err) {
-      // Only show validation errors to the user
-      if (err instanceof Error && err.message === 'Please fix the form errors') {
-        setError(err.message);
-      }
-      console.error('Form submission error:', err);
+    } catch (apiError) {
+      // Log the error but don't show it to the user
+      console.error('API error:', apiError);
     } finally {
-      console.log('Setting loading state to false');
       setIsLoading(false);
     }
   };
 
   const handleCloseModal = () => {
-    setError(null);
     setSuccess(null);
   };
 
@@ -285,7 +270,6 @@ export default function Home() {
       </div>
 
       <LoadingModal isOpen={isLoading} message="Setting up your newsletter..." onClose={() => {}} />
-      <ErrorModal isOpen={!!error} error={error || ''} onClose={handleCloseModal} />
       <SuccessModal isOpen={!!success} message={success || ''} onClose={handleCloseModal} />
     </div>
   );
