@@ -68,7 +68,7 @@ export const POST = withErrorHandler(async (req: Request) => {
     const typedNewsletter: NewsletterWithAll = newsletter;
 
     // Verify compiled newsletter is ready
-    if (typedNewsletter.compiled?.compiled_status !== 'ready') {
+    if (typedNewsletter.compiled?.[0]?.compiled_status !== 'ready') {
       throw new APIError('Newsletter content is not ready to send', 400);
     }
 
@@ -110,7 +110,7 @@ export const POST = withErrorHandler(async (req: Request) => {
               : null
           },
           typedNewsletter.subject,
-          typedNewsletter.compiled.html_content
+          typedNewsletter.compiled[0].html_content
         );
 
         // Update contact status to sent
