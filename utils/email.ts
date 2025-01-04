@@ -40,49 +40,69 @@ interface EmailResult {
 
 const BREVO_API_URL = 'https://api.brevo.com/v3';
 
-// Send a single email using Brevo REST API
-async function sendBrevoEmail(request: BrevoEmailRequest): Promise<BrevoEmailResponse> {
-  // Validate required environment variables
-  if (!process.env.BREVO_API_KEY || !process.env.BREVO_SENDER_EMAIL || !process.env.BREVO_SENDER_NAME) {
-    throw new Error('Missing required Brevo environment variables');
-  }
+// Maximum number of retries for email sending
+const MAX_RETRIES = 3;
+const RETRY_DELAY = 1000; // 1 second
 
-  const response = await fetch(`${BREVO_API_URL}/smtp/email`, {
-    method: 'POST',
-    headers: {
-      'api-key': process.env.BREVO_API_KEY,
-      'content-type': 'application/json',
-      'accept': 'application/json',
-    },
-    body: JSON.stringify(request),
-  });
+// Sleep utility for retries
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-  if (!response.ok) {
-    const error = await response.json() as BrevoErrorResponse;
-    switch (response.status) {
-      case 400:
-        throw new APIError('Bad request: ' + error.message, 400);
-      case 401:
-        throw new APIError('Unauthorized: Invalid API key', 401);
-      case 402:
-        throw new APIError('Payment required: Credit limit reached', 402);
-      case 403:
-        throw new APIError('Forbidden: Not enough credits or unauthorized sender', 403);
-      case 404:
-        throw new APIError('Not found: Resource not found', 404);
-      case 405:
-        throw new APIError('Method not allowed', 405);
-      case 406:
-        throw new APIError('Not acceptable: Invalid content type', 406);
-      case 429:
-        throw new APIError('Too many requests: Rate limit exceeded', 429);
-      default:
-        throw new APIError(`Email sending failed: ${error.message}`, response.status);
-    }
-  }
+import Bottleneck from 'bottleneck';
 
-  const data = await response.json();
-  return data as BrevoEmailResponse;
+const tokenLimit = 100000; // Example: Set max tokens per hour for Brevo
+const requestLimit = 100; // Set max requests per hour
+
+const limiter = new Bottleneck({
+    maxConcurrent: 1, // Ensure one request at a time
+    reservoir: requestLimit, // Max requests allowed before pause
+    reservoirRefreshAmount: requestLimit,
+    reservoirRefreshInterval: 60 * 60 * 1000, // Reset hourly
+});
+
+let tokenUsage = 0; // Track tokens used
+
+setInterval(() => {
+    tokenUsage = 0; // Reset token usage counter hourly
+}, 60 * 60 * 1000);
+
+// Send a single email using Brevo REST API with retries
+async function sendBrevoEmailWithLimit(request: BrevoEmailRequest, estimatedTokens: number): Promise<BrevoEmailResponse> {
+    return limiter.schedule(async () => {
+        if (tokenUsage + estimatedTokens > tokenLimit) {
+            console.log("Token limit reached. Waiting for reset.");
+            await new Promise(resolve => setTimeout(resolve, 60 * 60 * 1000)); // Wait for reset
+            tokenUsage = 0;
+        }
+
+        try {
+            const response = await fetch(`${BREVO_API_URL}/smtp/email`, {
+                method: 'POST',
+                headers: {
+                    'api-key': process.env.BREVO_API_KEY,
+                    'content-type': 'application/json',
+                    'accept': 'application/json',
+                },
+                body: JSON.stringify(request),
+            });
+
+            if (response.status === 429) {
+                const retryAfter = parseInt(response.headers.get("Retry-After"), 10) || 60;
+                console.log(`Rate limit exceeded. Retrying after ${retryAfter} seconds.`);
+                await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
+                return sendBrevoEmailWithLimit(request, estimatedTokens); // Retry
+            }
+
+            if (!response.ok) {
+                throw new Error(`HTTP Error: ${response.status}`);
+            }
+
+            tokenUsage += estimatedTokens; // Increment token usage
+            return await response.json();
+        } catch (error) {
+            console.error("Request error:", error.message);
+            throw error;
+        }
+    });
 }
 
 // Validate email format
@@ -115,7 +135,7 @@ export async function sendEmail(
     htmlContent
   };
 
-  const response = await sendBrevoEmail(request);
+  const response = await sendBrevoEmailWithLimit(request, 1); // Assume 1 token per email
   return {
     messageId: response.messageId,
     sent_at: new Date().toISOString()
@@ -225,4 +245,252 @@ export async function sendNewsletterDraft(
   }
 
   return result;
+}
+
+// Log email related events to the database
+async function logEmailEvent(
+  supabaseAdmin: any,
+  newsletterId: string,
+  event: {
+    type: string;
+    status: string;
+    message: string;
+    metadata?: any;
+  }
+) {
+  try {
+    await supabaseAdmin.from('api_error_logs').insert({
+      endpoint: 'email_service',
+      method: event.type,
+      error_message: event.message,
+      error_code: event.status,
+      metadata: {
+        newsletter_id: newsletterId,
+        ...event.metadata
+      },
+      created_at: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Failed to log email event:', error);
+  }
+}
+
+// Send final newsletter to all approved contacts with improved logging
+export async function sendFinalNewsletter(
+  newsletterId: string
+): Promise<{ successful: number; failed: number }> {
+  const supabaseAdmin = getSupabaseAdmin();
+
+  try {
+    // Log start of sending process
+    await logEmailEvent(supabaseAdmin, newsletterId, {
+      type: 'SEND_NEWSLETTER',
+      status: 'started',
+      message: 'Starting newsletter send process'
+    });
+
+    // Get newsletter data with compiled content and contacts
+    const { data: newsletter, error: newsletterError } = await supabaseAdmin
+      .from('newsletters')
+      .select(`
+        *,
+        company:companies!inner (*),
+        compiled:compiled_newsletters!inner (
+          html_content,
+          compiled_status
+        ),
+        contacts:newsletter_contacts!inner (
+          id,
+          contact:contacts!inner (
+            email,
+            first_name,
+            last_name
+          )
+        )
+      `)
+      .eq('id', newsletterId)
+      .eq('draft_status', 'ready_to_send')
+      .single();
+
+    if (newsletterError || !newsletter) {
+      const error = new APIError('Failed to fetch newsletter data', 500);
+      await logEmailEvent(supabaseAdmin, newsletterId, {
+        type: 'FETCH_NEWSLETTER',
+        status: 'error',
+        message: error.message,
+        metadata: { error: newsletterError }
+      });
+      throw error;
+    }
+
+    const typedNewsletter: NewsletterWithAll = newsletter;
+
+    // Verify compiled newsletter is ready
+    if (!typedNewsletter.compiled?.[0]?.html_content) {
+      const error = new APIError('Newsletter has not been compiled', 400);
+      await logEmailEvent(supabaseAdmin, newsletterId, {
+        type: 'VERIFY_COMPILATION',
+        status: 'error',
+        message: error.message
+      });
+      throw error;
+    }
+
+    // Verify we have contacts to send to
+    if (!typedNewsletter.contacts || typedNewsletter.contacts.length === 0) {
+      const error = new APIError('Newsletter has no approved contacts', 400);
+      await logEmailEvent(supabaseAdmin, newsletterId, {
+        type: 'VERIFY_CONTACTS',
+        status: 'error',
+        message: error.message
+      });
+      throw error;
+    }
+
+    // Update to sending status
+    const { error: sendingError } = await supabaseAdmin
+      .from('newsletters')
+      .update({ 
+        status: 'published' as NewsletterStatus,
+        draft_status: 'sending' as DraftStatus,
+        sending_started_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', newsletterId);
+
+    if (sendingError) {
+      const error = new APIError('Failed to update newsletter status', 500);
+      await logEmailEvent(supabaseAdmin, newsletterId, {
+        type: 'UPDATE_STATUS',
+        status: 'error',
+        message: error.message,
+        metadata: { error: sendingError }
+      });
+      throw error;
+    }
+
+    let successCount = 0;
+    let failureCount = 0;
+
+    // Send to each contact
+    for (const contactEntry of typedNewsletter.contacts) {
+      const contact = contactEntry.contact;
+      if (!contact || !contact.email) {
+        await logEmailEvent(supabaseAdmin, newsletterId, {
+          type: 'SKIP_CONTACT',
+          status: 'warning',
+          message: 'Skipping invalid contact',
+          metadata: { contact_id: contactEntry.id }
+        });
+        continue;
+      }
+
+      try {
+        // Log attempt
+        await logEmailEvent(supabaseAdmin, newsletterId, {
+          type: 'SEND_ATTEMPT',
+          status: 'info',
+          message: `Attempting to send to ${contact.email}`,
+          metadata: { contact_id: contactEntry.id }
+        });
+
+        // Send email using compiled content
+        await sendEmail(
+          {
+            email: contact.email,
+            name: contact.first_name && contact.last_name 
+              ? `${contact.first_name} ${contact.last_name}`
+              : null
+          },
+          typedNewsletter.subject,
+          typedNewsletter.compiled[0].html_content
+        );
+
+        // Update contact status to sent
+        await supabaseAdmin
+          .from('newsletter_contacts')
+          .update({
+            status: 'sent' as NewsletterContactStatus,
+            sent_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', contactEntry.id);
+
+        successCount++;
+
+        // Log success
+        await logEmailEvent(supabaseAdmin, newsletterId, {
+          type: 'SEND_SUCCESS',
+          status: 'success',
+          message: `Successfully sent to ${contact.email}`,
+          metadata: { contact_id: contactEntry.id }
+        });
+      } catch (error) {
+        console.error(`Failed to send newsletter to ${contact.email}:`, error);
+
+        // Update contact status to failed
+        await supabaseAdmin
+          .from('newsletter_contacts')
+          .update({
+            status: 'failed' as NewsletterContactStatus,
+            error_message: error instanceof Error ? error.message : 'Unknown error',
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', contactEntry.id);
+
+        failureCount++;
+
+        // Log failure
+        await logEmailEvent(supabaseAdmin, newsletterId, {
+          type: 'SEND_FAILURE',
+          status: 'error',
+          message: `Failed to send to ${contact.email}`,
+          metadata: { 
+            contact_id: contactEntry.id,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          }
+        });
+      }
+    }
+
+    // Update final newsletter status
+    const finalStatus: DraftStatus = failureCount === 0 ? 'sent' : 'failed';
+    await supabaseAdmin
+      .from('newsletters')
+      .update({ 
+        draft_status: finalStatus,
+        sending_completed_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        sent_count: successCount,
+        failed_count: failureCount
+      })
+      .eq('id', newsletterId);
+
+    // Log completion
+    await logEmailEvent(supabaseAdmin, newsletterId, {
+      type: 'SEND_COMPLETE',
+      status: finalStatus === 'sent' ? 'success' : 'partial_failure',
+      message: `Newsletter sending completed. Success: ${successCount}, Failed: ${failureCount}`,
+      metadata: { 
+        successful: successCount,
+        failed: failureCount
+      }
+    });
+
+    return {
+      successful: successCount,
+      failed: failureCount
+    };
+  } catch (error) {
+    // Log any unexpected errors
+    await logEmailEvent(supabaseAdmin, newsletterId, {
+      type: 'UNEXPECTED_ERROR',
+      status: 'error',
+      message: error instanceof Error ? error.message : 'Unknown error',
+      metadata: { 
+        error: error instanceof Error ? error.stack : 'No stack trace'
+      }
+    });
+    throw error;
+  }
 }

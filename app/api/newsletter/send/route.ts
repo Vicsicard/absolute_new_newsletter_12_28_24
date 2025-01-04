@@ -35,7 +35,7 @@ export const POST = withErrorHandler(async (req: Request) => {
       throw new APIError('Missing newsletter ID', 400);
     }
 
-    // Get newsletter with sections and company info
+    // Get newsletter with sections, company info, and contacts
     const { data: newsletter, error: newsletterError } = await supabaseAdmin
       .from('newsletters')
       .select(`
@@ -47,6 +47,14 @@ export const POST = withErrorHandler(async (req: Request) => {
         compiled:compiled_newsletters!inner (
           html_content,
           compiled_status
+        ),
+        contacts:newsletter_contacts!inner (
+          id,
+          contact:contacts!inner (
+            email,
+            first_name,
+            last_name
+          )
         )
       `)
       .eq('id', newsletterId)
@@ -64,11 +72,18 @@ export const POST = withErrorHandler(async (req: Request) => {
       throw new APIError('Newsletter content is not ready to send', 400);
     }
 
+    // Verify we have contacts to send to
+    if (!typedNewsletter.contacts || typedNewsletter.contacts.length === 0) {
+      throw new APIError('No contacts selected for newsletter', 400);
+    }
+
     // Update to sending status
     const { error: sendingError } = await supabaseAdmin
       .from('newsletters')
       .update({ 
+        status: 'published' as NewsletterStatus,
         draft_status: 'sending' as DraftStatus,
+        sending_started_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       })
       .eq('id', newsletterId);
@@ -77,103 +92,73 @@ export const POST = withErrorHandler(async (req: Request) => {
       throw new APIError('Failed to update newsletter to sending status', 500);
     }
 
-    // Use the company's contact email
-    if (!typedNewsletter.company?.contact_email) {
-      throw new APIError('No contact email found for company', 404);
+    let successCount = 0;
+    let failureCount = 0;
+
+    // Send to each contact
+    for (const contactEntry of typedNewsletter.contacts) {
+      const contact = contactEntry.contact;
+      if (!contact || !contact.email) continue;
+
+      try {
+        // Send email using compiled content
+        await sendEmail(
+          {
+            email: contact.email,
+            name: contact.first_name && contact.last_name 
+              ? `${contact.first_name} ${contact.last_name}`
+              : null
+          },
+          typedNewsletter.subject,
+          typedNewsletter.compiled.html_content
+        );
+
+        // Update contact status to sent
+        await supabaseAdmin
+          .from('newsletter_contacts')
+          .update({
+            status: 'sent' as NewsletterContactStatus,
+            sent_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', contactEntry.id);
+
+        successCount++;
+      } catch (error) {
+        console.error(`Failed to send newsletter to ${contact.email}:`, error);
+
+        // Update contact status to failed
+        await supabaseAdmin
+          .from('newsletter_contacts')
+          .update({
+            status: 'failed' as NewsletterContactStatus,
+            error_message: error instanceof Error ? error.message : 'Unknown error',
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', contactEntry.id);
+
+        failureCount++;
+      }
     }
 
-    const emailContact: EmailContact = {
-      email: typedNewsletter.company.contact_email,
-      name: typedNewsletter.company.company_name || null
-    };
+    // Update final newsletter status
+    const finalStatus: DraftStatus = failureCount === 0 ? 'sent' : 'failed';
+    await supabaseAdmin
+      .from('newsletters')
+      .update({ 
+        draft_status: finalStatus,
+        sending_completed_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', newsletterId);
 
-    // Send email using compiled content
-    try {
-      const result = await sendEmail(
-        emailContact,
-        typedNewsletter.subject,
-        typedNewsletter.compiled.html_content
-      );
-
-      // Update newsletter status to sent
-      const { error: updateError } = await supabaseAdmin
-        .from('newsletters')
-        .update({ 
-          draft_status: 'sent' as DraftStatus,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', newsletterId);
-
-      if (updateError) {
-        throw new APIError('Failed to update newsletter status after sending', 500);
+    return NextResponse.json({ 
+      message: 'Newsletter sending completed',
+      result: {
+        successful: successCount,
+        failed: failureCount
       }
-
-      // Update compiled newsletter status
-      const { error: compiledError } = await supabaseAdmin
-        .from('compiled_newsletters')
-        .update({
-          compiled_status: 'sent' as NewsletterStatus,
-          updated_at: new Date().toISOString()
-        })
-        .eq('newsletter_id', newsletterId);
-
-      if (compiledError) {
-        console.error('Failed to update compiled newsletter status:', compiledError);
-      }
-
-      // Create newsletter contact record
-      const { error: contactError } = await supabaseAdmin
-        .from('newsletter_contacts')
-        .insert({
-          newsletter_id: newsletterId,
-          contact_id: emailContact.id,
-          status: 'sent' as NewsletterContactStatus,
-          sent_at: result.sent_at,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        });
-
-      if (contactError) {
-        console.error('Failed to create newsletter contact record:', contactError);
-      }
-
-      return NextResponse.json({
-        success: true,
-        message: 'Newsletter sent successfully',
-        data: {
-          messageId: result.messageId,
-          sent_at: result.sent_at
-        }
-      });
-    } catch (error) {
-      // Update newsletter status to failed
-      const { error: updateError } = await supabaseAdmin
-        .from('newsletters')
-        .update({ 
-          draft_status: 'failed' as DraftStatus,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', newsletterId);
-
-      if (updateError) {
-        console.error('Failed to update newsletter status after error:', updateError);
-      }
-
-      // Update compiled newsletter status
-      const { error: compiledError } = await supabaseAdmin
-        .from('compiled_newsletters')
-        .update({
-          compiled_status: 'error' as NewsletterStatus,
-          updated_at: new Date().toISOString()
-        })
-        .eq('newsletter_id', newsletterId);
-
-      if (compiledError) {
-        console.error('Failed to update compiled newsletter status:', compiledError);
-      }
-
-      throw error;
-    }
+    });
   } catch (error) {
     console.error('Error sending newsletter:', error);
 

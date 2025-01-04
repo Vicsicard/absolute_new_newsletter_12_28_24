@@ -2,8 +2,8 @@
 import type { Database } from './database';
 
 // Status types - must match database CHECK constraints exactly
-export type NewsletterStatus = 'draft' | 'ready_to_send' | 'sending' | 'sent' | 'error';
-export type DraftStatus = 'pending' | 'sent' | 'failed';
+export type NewsletterStatus = 'draft' | 'published' | 'archived';
+export type DraftStatus = 'draft' | 'ready_to_send' | 'draft_sent' | 'pending_contacts' | 'sending' | 'sent' | 'failed';
 export type ContactStatus = 'active' | 'deleted';
 export type NewsletterContactStatus = 'pending' | 'sent' | 'failed';
 export type NewsletterSectionStatus = 'active' | 'deleted';
@@ -131,9 +131,23 @@ export type NewsletterWithSections = Newsletter & {
   newsletter_sections: NewsletterSection[];
 };
 
+export type NewsletterWithContacts = Newsletter & {
+  contacts: (NewsletterContact & {
+    contact: Contact;
+  })[];
+};
+
+export type NewsletterWithCompiled = Newsletter & {
+  compiled: CompiledNewsletter[];
+};
+
 export type NewsletterWithAll = Newsletter & {
   company: Company;
   newsletter_sections: NewsletterSection[];
+  contacts: (NewsletterContact & {
+    contact: Contact;
+  })[];
+  compiled: CompiledNewsletter[];
 };
 
 // Email specific interfaces
