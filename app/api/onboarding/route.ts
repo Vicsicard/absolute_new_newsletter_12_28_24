@@ -7,9 +7,7 @@ import type {
   Newsletter,
   NewsletterSection,
   NewsletterStatus,
-  DraftStatus,
-  QueueItem,
-  CompiledNewsletter
+  DraftStatus
 } from '@/types/email';
 
 // Configure API route
