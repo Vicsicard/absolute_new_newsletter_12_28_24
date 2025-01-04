@@ -41,7 +41,7 @@ export interface NewsletterSection {
   id: string;
   newsletter_id: string;
   section_number: number;
-  section_type: 'welcome' | 'industry_trends' | 'practical_tips';
+  section_type: SectionType;
   title?: string;
   content?: string;
   status: NewsletterSectionStatus;
@@ -60,9 +60,69 @@ export interface NewsletterContact {
   updated_at: string;
 }
 
+// Image Generation History type
+export interface ImageGenerationHistory {
+  id: string;
+  newsletter_section_id: string;
+  prompt: string;
+  image_url?: string;
+  status: ImageGenerationStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+// Industry Insights type
+export interface IndustryInsight {
+  id: string;
+  company_id: string;
+  industry: string;
+  insight: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// CSV Upload type
+export interface CsvUpload {
+  id: string;
+  company_id: string;
+  filename: string;
+  status: CsvUploadStatus;
+  error_message?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// Compiled Newsletter type
+export interface CompiledNewsletter {
+  id: string;
+  newsletter_id: string;
+  html_content: string;
+  compiled_status: CompiledNewsletterStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+// Newsletter Generation Queue type
+export interface NewsletterGenerationQueue {
+  id: string;
+  newsletter_id: string;
+  section_type: SectionType;
+  section_number: number;
+  status: QueueStatus;
+  attempts: number;
+  error_message?: string;
+  created_at: string;
+  updated_at: string;
+}
+
 // Status types
 export type NewsletterStatus = 'draft' | 'published' | 'archived';
 export type DraftStatus = 'draft' | 'draft_sent' | 'pending_contacts' | 'ready_to_send' | 'sending' | 'sent' | 'failed';
 export type ContactStatus = 'active' | 'inactive' | 'unsubscribed';
 export type NewsletterContactStatus = 'pending' | 'sent' | 'failed';
 export type NewsletterSectionStatus = 'pending' | 'in_progress' | 'completed' | 'failed';
+export type ImageGenerationStatus = 'pending' | 'in_progress' | 'completed' | 'failed';
+export type CsvUploadStatus = 'pending' | 'processing' | 'completed' | 'failed';
+export type CompiledNewsletterStatus = 'draft' | 'ready' | 'sent' | 'error';
+export type QueueStatus = 'pending' | 'in_progress' | 'completed' | 'failed';
+export type SectionType = 'welcome' | 'industry_trends' | 'practical_tips';

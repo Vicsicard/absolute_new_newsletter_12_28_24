@@ -77,8 +77,8 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
     company_id: company.id,
     status: 'draft' as NewsletterStatus,
     subject: `${company.company_name} Newsletter`,
-    draft_recipient_email: company.contact_email || jsonData.contact_email,  
     draft_status: 'draft' as DraftStatus,
+    draft_recipient_email: company.contact_email || jsonData.contact_email,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
@@ -109,7 +109,8 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
   const { data: queueItems, error: queueError } = await supabaseAdmin
     .from('newsletter_generation_queue')
     .select('*')
-    .eq('newsletter_id', newsletter.id);
+    .eq('newsletter_id', newsletter.id)
+    .order('created_at', { ascending: true });
 
   if (queueError) {
     console.error('Error verifying queue items:', queueError);
@@ -120,12 +121,28 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
   const { data: sections, error: sectionsError } = await supabaseAdmin
     .from('newsletter_sections')
     .select('*')
-    .eq('newsletter_id', newsletter.id);
+    .eq('newsletter_id', newsletter.id)
+    .order('section_number', { ascending: true });
 
   if (sectionsError) {
     console.error('Error verifying sections:', sectionsError);
   } else {
     console.log('Newsletter sections created:', sections);
+  }
+
+  // Create initial compiled newsletter record
+  const { error: compiledError } = await supabaseAdmin
+    .from('compiled_newsletters')
+    .insert({
+      newsletter_id: newsletter.id,
+      html_content: '', 
+      compiled_status: 'draft',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    });
+
+  if (compiledError) {
+    console.error('Error creating compiled newsletter:', compiledError);
   }
 
   // Start the queue processor if not already running

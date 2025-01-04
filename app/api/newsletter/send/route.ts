@@ -9,7 +9,8 @@ import type {
   NewsletterSection,
   NewsletterContact,
   Contact,
-  NewsletterWithAll
+  NewsletterWithAll,
+  DraftStatus
 } from '@/types/email';
 import { APIError } from '@/utils/errors';
 import { withErrorHandler } from '@/utils/api-middleware';
@@ -40,13 +41,16 @@ export const POST = withErrorHandler(async (req: Request) => {
       .select(`
         *,
         company:companies!inner (*),
-        newsletter_sections (
+        sections:newsletter_sections (
           *
+        ),
+        compiled:compiled_newsletters!inner (
+          html_content,
+          compiled_status
         )
       `)
       .eq('id', newsletterId)
-      .eq('status', 'ready_to_send')
-      .order('section_number', { foreignTable: 'newsletter_sections' })
+      .eq('draft_status', 'ready_to_send')
       .single();
 
     if (newsletterError || !newsletter) {
@@ -55,11 +59,16 @@ export const POST = withErrorHandler(async (req: Request) => {
 
     const typedNewsletter: NewsletterWithAll = newsletter;
 
+    // Verify compiled newsletter is ready
+    if (!typedNewsletter.compiled?.compiled_status === 'ready') {
+      throw new APIError('Newsletter content is not ready to send', 400);
+    }
+
     // Update to sending status
     const { error: sendingError } = await supabaseAdmin
       .from('newsletters')
       .update({ 
-        status: 'sending' as NewsletterStatus,
+        draft_status: 'sending' as DraftStatus,
         updated_at: new Date().toISOString()
       })
       .eq('id', newsletterId);
@@ -78,39 +87,54 @@ export const POST = withErrorHandler(async (req: Request) => {
       name: typedNewsletter.company.company_name || null
     };
 
-    // Generate HTML content
-    const htmlContent = typedNewsletter.newsletter_sections
-      .filter(section => section.status === 'active')
-      .sort((a, b) => a.section_number - b.section_number)
-      .map(section => `
-        <h2>${section.title}</h2>
-        ${section.content}
-        ${section.image_url ? `<img src="${section.image_url}" alt="${section.title}">` : ''}
-      `).join('\n');
-
-    // Send email
+    // Send email using compiled content
     try {
       const result = await sendEmail(
         emailContact,
         typedNewsletter.subject,
-        htmlContent
+        typedNewsletter.compiled.html_content
       );
 
-      // Update newsletter status
+      // Update newsletter status to sent
       const { error: updateError } = await supabaseAdmin
         .from('newsletters')
         .update({ 
-          status: 'sent' as NewsletterStatus,
-          sent_count: 1,
-          failed_count: 0,
-          last_sent_status: 'Successfully sent to contact',
-          sent_at: result.sent_at,
+          draft_status: 'sent' as DraftStatus,
           updated_at: new Date().toISOString()
         })
         .eq('id', newsletterId);
 
       if (updateError) {
         throw new APIError('Failed to update newsletter status after sending', 500);
+      }
+
+      // Update compiled newsletter status
+      const { error: compiledError } = await supabaseAdmin
+        .from('compiled_newsletters')
+        .update({
+          compiled_status: 'sent' as NewsletterStatus,
+          updated_at: new Date().toISOString()
+        })
+        .eq('newsletter_id', newsletterId);
+
+      if (compiledError) {
+        console.error('Failed to update compiled newsletter status:', compiledError);
+      }
+
+      // Create newsletter contact record
+      const { error: contactError } = await supabaseAdmin
+        .from('newsletter_contacts')
+        .insert({
+          newsletter_id: newsletterId,
+          contact_id: emailContact.id,
+          status: 'sent' as NewsletterContactStatus,
+          sent_at: result.sent_at,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        });
+
+      if (contactError) {
+        console.error('Failed to create newsletter contact record:', contactError);
       }
 
       return NextResponse.json({
@@ -126,16 +150,26 @@ export const POST = withErrorHandler(async (req: Request) => {
       const { error: updateError } = await supabaseAdmin
         .from('newsletters')
         .update({ 
-          status: 'failed' as NewsletterStatus,
-          sent_count: 0,
-          failed_count: 1,
-          last_sent_status: error instanceof Error ? error.message : 'Failed to send newsletter',
+          draft_status: 'failed' as DraftStatus,
           updated_at: new Date().toISOString()
         })
         .eq('id', newsletterId);
 
       if (updateError) {
         console.error('Failed to update newsletter status after error:', updateError);
+      }
+
+      // Update compiled newsletter status
+      const { error: compiledError } = await supabaseAdmin
+        .from('compiled_newsletters')
+        .update({
+          compiled_status: 'error' as NewsletterStatus,
+          updated_at: new Date().toISOString()
+        })
+        .eq('newsletter_id', newsletterId);
+
+      if (compiledError) {
+        console.error('Failed to update compiled newsletter status:', compiledError);
       }
 
       throw error;

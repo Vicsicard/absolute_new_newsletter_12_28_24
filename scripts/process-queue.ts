@@ -48,18 +48,21 @@ interface QueueItem {
   id: string;
   newsletter_id: string;
   section_type: string;
+  section_number: number;
   status: 'pending' | 'in_progress' | 'completed' | 'failed';
+  attempts?: number;
   error_message?: string;
-  created_at: string;
-  updated_at: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 interface Newsletter {
   id: string;
   company_id: string;
   subject: string;
-  draft_recipient_email: string;
+  status: 'draft' | 'generating' | 'ready' | 'sent' | 'error';
   draft_status: 'draft' | 'generating' | 'ready' | 'sent' | 'error';
+  draft_recipient_email: string;
   created_at: string;
   updated_at: string;
 }
@@ -68,8 +71,11 @@ interface Company {
   id: string;
   company_name: string;
   industry: string;
+  contact_email: string;
   target_audience?: string;
   audience_description?: string;
+  website_url?: string;
+  phone_number?: string;
   created_at: string;
   updated_at: string;
 }
@@ -123,6 +129,8 @@ console.log('Starting queue processor with configuration:', {
 const RATE_LIMIT_DELAY = 5000; // 5 seconds between API calls
 const PROCESS_INTERVAL = 30000; // 30 seconds between checking for new items
 const MAX_CONCURRENT_REQUESTS = 3;
+const MAX_ATTEMPTS = 3;
+const RETRY_DELAY = 5000; // 5 seconds
 let activeRequests = 0;
 
 async function sleep(ms: number) {
@@ -132,24 +140,19 @@ async function sleep(ms: number) {
 async function getNextPendingItem(): Promise<QueueItem | null> {
   console.log('Checking for pending items...');
   
+  // Get the pending queue item exactly as defined in the schema
   const { data: items, error } = await supabase
     .from('newsletter_generation_queue')
     .select(`
-      *,
-      newsletters:newsletter_id (
-        id,
-        subject,
-        draft_recipient_email,
-        draft_status,
-        company_id,
-        companies:company_id (
-          id,
-          company_name,
-          industry,
-          target_audience,
-          audience_description
-        )
-      )
+      id,
+      newsletter_id,
+      section_type,
+      section_number,
+      status,
+      attempts,
+      error_message,
+      created_at,
+      updated_at
     `)
     .eq('status', 'pending')
     .order('created_at', { ascending: true })
@@ -166,8 +169,50 @@ async function getNextPendingItem(): Promise<QueueItem | null> {
   }
 
   const item = items[0];
-  const newsletter = item.newsletters;
-  const company = newsletter?.companies;
+
+  // Get the newsletter exactly as defined in the schema
+  const { data: newsletter, error: newsletterError } = await supabase
+    .from('newsletters')
+    .select(`
+      id,
+      company_id,
+      subject,
+      status,
+      draft_status,
+      draft_recipient_email,
+      created_at,
+      updated_at
+    `)
+    .eq('id', item.newsletter_id)
+    .single();
+
+  if (newsletterError) {
+    console.error('Error fetching newsletter:', newsletterError);
+    return null;
+  }
+
+  // Get the company exactly as defined in the schema
+  const { data: company, error: companyError } = await supabase
+    .from('companies')
+    .select(`
+      id,
+      company_name,
+      industry,
+      contact_email,
+      target_audience,
+      audience_description,
+      website_url,
+      phone_number,
+      created_at,
+      updated_at
+    `)
+    .eq('id', newsletter.company_id)
+    .single();
+
+  if (companyError) {
+    console.error('Error fetching company:', companyError);
+    return null;
+  }
 
   console.log('Found pending item:', {
     id: item.id,
@@ -178,7 +223,13 @@ async function getNextPendingItem(): Promise<QueueItem | null> {
     industry: company?.industry
   });
 
-  return item;
+  return {
+    ...item,
+    newsletters: {
+      ...newsletter,
+      companies: company
+    }
+  };
 }
 
 async function updateQueueItem(id: string, updates: Partial<QueueItem>) {
@@ -200,7 +251,16 @@ async function updateQueueItem(id: string, updates: Partial<QueueItem>) {
 async function getNewsletterInfo(newsletterId: string): Promise<{ newsletter: Newsletter; company: Company }> {
   const { data: newsletter, error: newsletterError } = await supabase
     .from('newsletters')
-    .select('*')
+    .select(`
+      id,
+      company_id,
+      subject,
+      status,
+      draft_status,
+      draft_recipient_email,
+      created_at,
+      updated_at
+    `)
     .eq('id', newsletterId)
     .single();
 
@@ -210,7 +270,18 @@ async function getNewsletterInfo(newsletterId: string): Promise<{ newsletter: Ne
 
   const { data: company, error: companyError } = await supabase
     .from('companies')
-    .select('*')
+    .select(`
+      id,
+      company_name,
+      industry,
+      contact_email,
+      target_audience,
+      audience_description,
+      website_url,
+      phone_number,
+      created_at,
+      updated_at
+    `)
     .eq('id', newsletter.company_id)
     .single();
 
@@ -222,35 +293,55 @@ async function getNewsletterInfo(newsletterId: string): Promise<{ newsletter: Ne
 }
 
 async function processQueueItem(item: QueueItem): Promise<void> {
+  console.log(`Processing section ${item.section_type} for newsletter ${item.newsletter_id}`);
   console.log(`Processing queue item ${item.id} for newsletter ${item.newsletter_id}`);
-  
-  try {
-    // Update status to in_progress
-    await updateQueueItemStatus(item.newsletter_id, item.section_type as SectionType, 'in_progress');
 
-    const { data: newsletter, error: newsletterError } = await supabase
+  try {
+    // First verify the newsletter exists
+    const { data: newsletterExists } = await supabase
       .from('newsletters')
-      .select(`
-        *,
-        companies:company_id (
-          id,
-          company_name,
-          industry,
-          target_audience,
-          audience_description
-        )
-      `)
+      .select('id')
       .eq('id', item.newsletter_id)
       .single();
 
-    if (newsletterError || !newsletter) {
-      throw new Error('Failed to fetch newsletter details');
+    if (!newsletterExists) {
+      throw new Error(`Newsletter ${item.newsletter_id} not found`);
     }
 
-    const company = newsletter.companies;
-    if (!company) {
-      throw new Error('Failed to fetch company details');
+    // Check if section already exists
+    const { data: existingSections } = await supabase
+      .from('newsletter_sections')
+      .select('id, status')
+      .eq('newsletter_id', item.newsletter_id)
+      .eq('section_number', item.section_number)
+      .limit(1);
+
+    // If section exists and is completed, mark queue item as completed
+    if (existingSections && existingSections.length > 0) {
+      if (existingSections[0].status === 'completed') {
+        await supabase
+          .from('newsletter_generation_queue')
+          .update({ status: 'completed' })
+          .eq('id', item.id);
+        console.log(`Section ${item.section_number} already exists and is completed for newsletter ${item.newsletter_id}`);
+        return;
+      } else {
+        // If section exists but isn't completed, throw error
+        throw new Error(`Section ${item.section_number} already exists for newsletter ${item.newsletter_id} with status ${existingSections[0].status}`);
+      }
     }
+
+    // Get newsletter and company info for content generation
+    const { newsletter, company } = await getNewsletterInfo(item.newsletter_id);
+    if (!company) {
+      throw new Error(`Company not found for newsletter ${item.newsletter_id}`);
+    }
+
+    // Update queue item status to in_progress
+    await supabase
+      .from('newsletter_generation_queue')
+      .update({ status: 'in_progress' })
+      .eq('id', item.id);
 
     // Generate content based on section type
     const config = SECTION_CONFIG[item.section_type as SectionType];
@@ -259,56 +350,56 @@ async function processQueueItem(item: QueueItem): Promise<void> {
     }
 
     console.log(`Generating content for section ${item.section_type}...`);
-    const messages = [
-      {
-        role: 'system',
-        content: `You are a professional newsletter writer. Write content for a ${company.industry} company newsletter. The company name is ${company.company_name}.`
-      },
-      {
-        role: 'user',
-        content: `${config.prompt} for ${company.company_name}. Target audience: ${company.target_audience || 'general audience'}. ${company.audience_description ? `Audience details: ${company.audience_description}` : ''}`
-      }
-    ];
-
-    const content = await callOpenAIWithRetry(messages);
+    const content = await generateContent(config.prompt, company, newsletter);
     console.log(`Generated content for section ${item.section_type}`);
 
-    // Create or update section
-    const sectionData = {
-      newsletter_id: item.newsletter_id,
-      section_type: item.section_type,
-      section_number: config.sectionNumber,
-      content,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
-    };
-
+    // Create newsletter section
     const { error: sectionError } = await supabase
       .from('newsletter_sections')
-      .upsert(sectionData, {
-        onConflict: 'newsletter_id,section_number'
+      .insert({
+        newsletter_id: item.newsletter_id,
+        section_number: item.section_number,
+        section_type: item.section_type,
+        title: config.title,
+        content,
+        status: 'completed'
       });
 
     if (sectionError) {
-      throw new Error('Failed to save section content');
+      throw sectionError;
     }
 
     // Update queue item status to completed
-    await updateQueueItemStatus(item.newsletter_id, item.section_type as SectionType, 'completed');
+    await supabase
+      .from('newsletter_generation_queue')
+      .update({ status: 'completed' })
+      .eq('id', item.id);
 
     console.log(`Successfully processed section ${item.section_type}`);
 
-    // Check if all sections are completed and update newsletter status
-    await updateNewsletterStatus(item.newsletter_id);
-
   } catch (error) {
-    console.error(`Error processing section ${item.section_type}:`, error);
-    await updateQueueItemStatus(
-      item.newsletter_id,
-      item.section_type as SectionType,
-      'failed',
-      error instanceof Error ? error.message : 'Unknown error'
-    );
+    console.error('Error processing queue item:', error);
+
+    // Update attempts count and status
+    const attempts = (item.attempts || 0) + 1;
+    const status = attempts >= MAX_ATTEMPTS ? 'failed' : 'pending';
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+
+    await supabase
+      .from('newsletter_generation_queue')
+      .update({
+        status,
+        attempts,
+        error_message: errorMessage
+      })
+      .eq('id', item.id);
+
+    if (status === 'failed') {
+      console.error(`Queue item ${item.id} failed after ${attempts} attempts: ${errorMessage}`);
+    } else {
+      // Wait before retrying
+      await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
+    }
   }
 }
 
@@ -516,13 +607,15 @@ async function checkQueueStatus(): Promise<void> {
   const { data: queueItems, error } = await supabase
     .from('newsletter_generation_queue')
     .select(`
-      *,
-      newsletters:newsletter_id (
-        id,
-        subject,
-        draft_recipient_email,
-        status
-      )
+      id,
+      newsletter_id,
+      section_type,
+      section_number,
+      status,
+      attempts,
+      error_message,
+      created_at,
+      updated_at
     `)
     .neq('status', 'completed')
     .order('created_at', { ascending: false })
@@ -537,7 +630,7 @@ async function checkQueueStatus(): Promise<void> {
     console.log('Found pending queue items:');
     queueItems.forEach(item => {
       console.log(`- Queue Item ${item.id}:`);
-      console.log(`  Newsletter: ${item.newsletters?.subject}`);
+      console.log(`  Newsletter: ${item.newsletter_id}`);
       console.log(`  Section: ${item.section_type}`);
       console.log(`  Status: ${item.status}`);
       console.log(`  Created: ${item.created_at}`);
@@ -610,4 +703,44 @@ async function updateQueueItemStatus(
     console.error('Error updating queue item status:', error);
     throw error;
   }
+}
+
+async function getCompany(companyId: string): Promise<Company> {
+  const { data: company, error } = await supabase
+    .from('companies')
+    .select(`
+      id,
+      company_name,
+      industry,
+      contact_email,
+      target_audience,
+      audience_description,
+      website_url,
+      phone_number,
+      created_at,
+      updated_at
+    `)
+    .eq('id', companyId)
+    .single();
+
+  if (error || !company) {
+    throw new Error('Company not found');
+  }
+
+  return company;
+}
+
+async function generateContent(prompt: string, company: Company, newsletter: Newsletter): Promise<string> {
+  const messages = [
+    {
+      role: 'system',
+      content: `You are a professional newsletter writer. Write content for a ${company.industry} company newsletter. The company name is ${company.company_name}.`
+    },
+    {
+      role: 'user',
+      content: `${prompt} for ${company.company_name}. Target audience: ${company.target_audience || 'general audience'}. ${company.audience_description ? `Audience details: ${company.audience_description}` : ''}`
+    }
+  ];
+
+  return await callOpenAIWithRetry(messages);
 }

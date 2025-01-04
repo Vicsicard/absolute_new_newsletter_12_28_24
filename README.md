@@ -12,6 +12,7 @@ A powerful newsletter generation application that uses AI to create engaging con
 - 🎯 Industry-specific content
 - 🖼️ AI-generated images
 - 📈 Status tracking
+- **Newly added email sending functionality**
 
 ## Tech Stack
 
@@ -84,6 +85,15 @@ newsletter-app/
 ├── utils/                # Helper functions
 └── types/                # TypeScript types
 ```
+
+## Current Status
+
+### Email Integration
+- Brevo API integration
+- HTML email templates
+- Automatic draft sending
+- Status updates
+- **Email sending functionality tested successfully**
 
 ## Database Schema
 

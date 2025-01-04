@@ -18,8 +18,11 @@ next-env.d.ts
 # misc
 .DS_Store
 *.pem
+
+# Environment files
 .env
 .env.local
+.env.test
 .env*.local
 .env.development.local
 .env.test.local
@@ -31,7 +34,6 @@ yarn-debug.log*
 yarn-error.log*
 
 # local env files
-.env*.local
 
 # vercel
 .vercel
@@ -54,5 +56,3 @@ Thumbs.db
 
 # Temporary directories
 /temp-repo/
-
-.vercel

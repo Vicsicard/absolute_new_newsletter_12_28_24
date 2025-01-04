@@ -1,10 +1,11 @@
 import { createClient } from '@supabase/supabase-js';
-import fs from 'fs';
-import path from 'path';
 import * as dotenv from 'dotenv';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
+import { readFileSync, readdirSync } from 'fs';
 
-// Load environment variables
-dotenv.config({ path: path.join(process.cwd(), '.env.local') });
+// Load environment variables from .env.local
+dotenv.config({ path: join(process.cwd(), '.env.local') });
 
 if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
   console.error('Missing required environment variables:');
@@ -13,50 +14,63 @@ if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
   process.exit(1);
 }
 
-async function applyMigrations() {
-  const supabase = createClient(
-    process.env.SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_ROLE_KEY,
-    {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false
-      }
-    }
-  );
+const supabase = createClient(
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
-  // Read and execute the migration files
-  const migrationFiles = [
-    '20250103_complete_schema.sql',
-    '20250104_add_newsletter_trigger.sql'
-  ];
-
-  for (const file of migrationFiles) {
-    const filePath = path.join(__dirname, '..', 'supabase', 'migrations', file);
-    console.log(`Applying migration: ${file}`);
-    
-    try {
-      if (!fs.existsSync(filePath)) {
-        console.error(`Migration file not found: ${file}`);
-        process.exit(1);
-      }
-
-      const sql = fs.readFileSync(filePath, 'utf8');
-      
-      // Execute SQL directly
-      const { error } = await supabase.rpc('exec_sql', { sql });
-      
-      if (error) {
-        console.error(`Error applying ${file}:`, error);
-        process.exit(1);
-      }
-      
-      console.log(`Successfully applied ${file}`);
-    } catch (err) {
-      console.error(`Error reading or executing ${file}:`, err);
-      process.exit(1);
-    }
+async function applyMigration(sql: string) {
+  try {
+    // Execute the SQL directly using a raw query
+    const { data, error } = await supabase.from('_raw_sql').select('*').execute(sql);
+    if (error) throw error;
+    console.log('Migration applied successfully');
+  } catch (error) {
+    console.error('Error applying migration:', error);
+    throw error;
   }
 }
 
+async function applyMigrations() {
+  try {
+    // Get the directory of the current module
+    const __dirname = dirname(fileURLToPath(import.meta.url));
+    
+    // Get all SQL files in the migrations directory
+    const migrationsDir = join(__dirname, '..', 'supabase', 'migrations');
+    const files = readdirSync(migrationsDir)
+      .filter(file => file.endsWith('.sql'))
+      .sort();
+
+    // Create schema_cache_refresh function first
+    const schemaCacheFunc = `
+      CREATE OR REPLACE FUNCTION schema_cache_refresh()
+      RETURNS void AS $$
+      BEGIN
+        NOTIFY pgrst, 'reload schema';
+      END;
+      $$ LANGUAGE plpgsql;
+    `;
+    
+    await applyMigration(schemaCacheFunc);
+    console.log('Created schema_cache_refresh function');
+
+    // Apply each migration
+    for (const file of files) {
+      console.log(`Applying migration: ${file}`);
+      const sql = readFileSync(join(migrationsDir, file), 'utf8');
+      await applyMigration(sql);
+    }
+
+    // Refresh schema cache after all migrations
+    await applyMigration('SELECT schema_cache_refresh();');
+    console.log('Schema cache refreshed');
+
+  } catch (error) {
+    console.error('Error in migrations:', error);
+    process.exit(1);
+  }
+}
+
+// Run migrations
 applyMigrations().catch(console.error);
