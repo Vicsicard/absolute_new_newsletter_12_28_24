@@ -161,8 +161,8 @@ export async function initializeGenerationQueue(
     const { error: updateError } = await supabaseAdmin
       .from('newsletters')
       .update({
-        status: 'generating',
-        draft_status: 'generating',
+        status: 'draft',
+        draft_status: 'ready_to_send',
         updated_at: timestamp
       })
       .eq('id', newsletterId);
@@ -240,46 +240,51 @@ export async function generateNewsletter(
     if (!options) {
       // Get company data from newsletter if options not provided
       console.log('Fetching company data for newsletter:', newsletterId);
-      type NewsletterWithCompanyResult = {
-        data: NewsletterWithCompany | null;
-        error: any;
-      };
-
+      
+      // First get the newsletter
       const { data: newsletter, error: newsletterError } = await supabaseAdmin
         .from('newsletters')
-        .select(`
-          *,
-          company:companies (
-            company_name,
-            industry,
-            target_audience,
-            audience_description,
-            contact_email
-          )
-        `)
+        .select('*')
         .eq('id', newsletterId)
-        .single() as NewsletterWithCompanyResult;
+        .single();
 
       if (newsletterError) {
         console.error('Error fetching newsletter data:', newsletterError);
         throw new APIError('Failed to fetch newsletter data', 500);
       }
 
-      if (!newsletter || !newsletter.company) {
-        console.error('Newsletter or company data not found');
-        throw new APIError('Newsletter or company data not found', 404);
+      if (!newsletter) {
+        console.error('Newsletter not found');
+        throw new APIError('Newsletter not found', 404);
       }
 
-      console.log('Successfully fetched newsletter data:', {
-        companyName: newsletter.company.company_name,
-        industry: newsletter.company.industry
+      // Then get the company data
+      const { data: company, error: companyError } = await supabaseAdmin
+        .from('companies')
+        .select('company_name, industry, target_audience, audience_description, contact_email')
+        .eq('id', newsletter.company_id)
+        .single();
+
+      if (companyError) {
+        console.error('Error fetching company data:', companyError);
+        throw new APIError('Failed to fetch company data', 500);
+      }
+
+      if (!company) {
+        console.error('Company data not found');
+        throw new APIError('Company data not found', 404);
+      }
+
+      console.log('Successfully fetched newsletter and company data:', {
+        companyName: company.company_name,
+        industry: company.industry
       });
 
       options = {
-        companyName: newsletter.company.company_name,
-        industry: newsletter.company.industry,
-        targetAudience: newsletter.company.target_audience || undefined,
-        audienceDescription: newsletter.company.audience_description || undefined
+        companyName: company.company_name,
+        industry: company.industry,
+        targetAudience: company.target_audience || undefined,
+        audienceDescription: company.audience_description || undefined
       };
     }
 
@@ -413,7 +418,7 @@ export async function generateNewsletter(
             content,
             image_prompt: imagePrompt,
             image_url: imageUrl,
-            status: 'active' as NewsletterSectionStatus,
+            status: 'completed',
             updated_at: new Date().toISOString()
           }, {
             onConflict: 'newsletter_id,section_number'

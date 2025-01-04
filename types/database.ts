@@ -7,15 +7,15 @@ export type Json =
   | Json[];
 
 // These must match database CHECK constraints exactly
-export type NewsletterStatus = 'draft' | 'draft_sent' | 'pending_contacts' | 'ready_to_send' | 'sending' | 'sent' | 'failed';
-export type DraftStatus = 'pending' | 'sent' | 'failed';
+export type NewsletterDraftStatus = 'draft' | 'draft_sent' | 'pending_contacts' | 'ready_to_send' | 'sending' | 'sent' | 'failed';
+export type NewsletterStatus = 'draft' | 'published' | 'archived';
 export type ContactStatus = 'active' | 'deleted';
 export type NewsletterContactStatus = 'pending' | 'sent' | 'failed';
-export type NewsletterSectionStatus = 'active' | 'deleted';
+export type NewsletterSectionStatus = 'pending' | 'in_progress' | 'completed' | 'failed';
+export type SectionType = 'welcome' | 'industry_trends' | 'practical_tips';
 export type ImageGenerationStatus = 'pending' | 'processing' | 'completed' | 'failed';
 export type CsvUploadStatus = 'pending' | 'processing' | 'completed' | 'failed';
 export type CompiledNewsletterStatus = 'draft' | 'ready' | 'sent' | 'error';
-export type NewsletterGenerationQueueStatus = 'pending' | 'in_progress' | 'completed' | 'failed';
 
 export interface Database {
   public: {
@@ -63,8 +63,9 @@ export interface Database {
           id: string;
           company_id: string;
           email: string;
-          name: string | null;
-          status: 'active' | 'deleted';
+          first_name: string | null;
+          last_name: string | null;
+          status: ContactStatus;
           created_at: string | null;
           updated_at: string | null;
         };
@@ -72,8 +73,9 @@ export interface Database {
           id?: string;
           company_id: string;
           email: string;
-          name?: string | null;
-          status?: 'active' | 'deleted';
+          first_name?: string | null;
+          last_name?: string | null;
+          status?: ContactStatus;
           created_at?: string | null;
           updated_at?: string | null;
         };
@@ -81,72 +83,105 @@ export interface Database {
           id?: string;
           company_id?: string;
           email?: string;
-          name?: string | null;
-          status?: 'active' | 'deleted';
+          first_name?: string | null;
+          last_name?: string | null;
+          status?: ContactStatus;
           created_at?: string | null;
           updated_at?: string | null;
         };
       };
-      csv_uploads: {
+      newsletters: {
         Row: {
           id: string;
           company_id: string;
-          filename: string;
-          status: 'pending' | 'processing' | 'completed' | 'failed';
-          error_message: string | null;
-          processed_rows: number;
-          total_rows: number;
+          subject: string;
+          status: NewsletterStatus;
+          draft_status: NewsletterDraftStatus;
+          draft_recipient_email: string | null;
           created_at: string | null;
           updated_at: string | null;
         };
         Insert: {
           id?: string;
           company_id: string;
-          filename: string;
-          status?: 'pending' | 'processing' | 'completed' | 'failed';
-          error_message?: string | null;
-          processed_rows?: number;
-          total_rows?: number;
+          subject: string;
+          status?: NewsletterStatus;
+          draft_status?: NewsletterDraftStatus;
+          draft_recipient_email?: string | null;
           created_at?: string | null;
           updated_at?: string | null;
         };
         Update: {
           id?: string;
           company_id?: string;
-          filename?: string;
-          status?: 'pending' | 'processing' | 'completed' | 'failed';
-          error_message?: string | null;
-          processed_rows?: number;
-          total_rows?: number;
+          subject?: string;
+          status?: NewsletterStatus;
+          draft_status?: NewsletterDraftStatus;
+          draft_recipient_email?: string | null;
           created_at?: string | null;
           updated_at?: string | null;
         };
       };
-      compiled_newsletters: {
+      newsletter_sections: {
         Row: {
           id: string;
           newsletter_id: string;
-          compiled_content: string;
-          compiled_status: CompiledNewsletterStatus;
-          error_message: string | null;
+          section_number: number;
+          section_type: SectionType;
+          title: string | null;
+          content: string | null;
+          status: NewsletterSectionStatus;
           created_at: string | null;
           updated_at: string | null;
         };
         Insert: {
           id?: string;
           newsletter_id: string;
-          compiled_content: string;
-          compiled_status?: CompiledNewsletterStatus;
-          error_message?: string | null;
+          section_number: number;
+          section_type: SectionType;
+          title?: string | null;
+          content?: string | null;
+          status?: NewsletterSectionStatus;
           created_at?: string | null;
           updated_at?: string | null;
         };
         Update: {
           id?: string;
           newsletter_id?: string;
-          compiled_content?: string;
-          compiled_status?: CompiledNewsletterStatus;
-          error_message?: string | null;
+          section_number?: number;
+          section_type?: SectionType;
+          title?: string | null;
+          content?: string | null;
+          status?: NewsletterSectionStatus;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+      };
+      newsletter_contacts: {
+        Row: {
+          id: string;
+          newsletter_id: string;
+          contact_id: string;
+          status: NewsletterContactStatus;
+          sent_at: string | null;
+          created_at: string | null;
+          updated_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          newsletter_id: string;
+          contact_id: string;
+          status?: NewsletterContactStatus;
+          sent_at?: string | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          newsletter_id?: string;
+          contact_id?: string;
+          status?: NewsletterContactStatus;
+          sent_at?: string | null;
           created_at?: string | null;
           updated_at?: string | null;
         };
@@ -157,8 +192,7 @@ export interface Database {
           newsletter_section_id: string;
           prompt: string;
           image_url: string | null;
-          status: 'pending' | 'processing' | 'completed' | 'failed';
-          error_message: string | null;
+          status: ImageGenerationStatus;
           created_at: string | null;
           updated_at: string | null;
         };
@@ -167,8 +201,7 @@ export interface Database {
           newsletter_section_id: string;
           prompt: string;
           image_url?: string | null;
-          status?: 'pending' | 'processing' | 'completed' | 'failed';
-          error_message?: string | null;
+          status?: ImageGenerationStatus;
           created_at?: string | null;
           updated_at?: string | null;
         };
@@ -177,8 +210,7 @@ export interface Database {
           newsletter_section_id?: string;
           prompt?: string;
           image_url?: string | null;
-          status?: 'pending' | 'processing' | 'completed' | 'failed';
-          error_message?: string | null;
+          status?: ImageGenerationStatus;
           created_at?: string | null;
           updated_at?: string | null;
         };
@@ -188,9 +220,7 @@ export interface Database {
           id: string;
           company_id: string;
           industry: string;
-          insight_type: string;
-          content: string;
-          metadata: Json | null;
+          insight: string;
           created_at: string | null;
           updated_at: string | null;
         };
@@ -198,9 +228,7 @@ export interface Database {
           id?: string;
           company_id: string;
           industry: string;
-          insight_type: string;
-          content: string;
-          metadata?: Json | null;
+          insight: string;
           created_at?: string | null;
           updated_at?: string | null;
         };
@@ -208,41 +236,62 @@ export interface Database {
           id?: string;
           company_id?: string;
           industry?: string;
-          insight_type?: string;
-          content?: string;
-          metadata?: Json | null;
+          insight?: string;
           created_at?: string | null;
           updated_at?: string | null;
         };
       };
-      newsletter_contacts: {
+      csv_uploads: {
         Row: {
           id: string;
-          newsletter_id: string;
-          contact_id: string;
-          status: 'pending' | 'sent' | 'failed';
-          sent_at: string | null;
+          company_id: string;
+          filename: string;
+          status: CsvUploadStatus;
           error_message: string | null;
           created_at: string | null;
           updated_at: string | null;
         };
         Insert: {
           id?: string;
-          newsletter_id: string;
-          contact_id: string;
-          status?: 'pending' | 'sent' | 'failed';
-          sent_at?: string | null;
+          company_id: string;
+          filename: string;
+          status?: CsvUploadStatus;
           error_message?: string | null;
           created_at?: string | null;
           updated_at?: string | null;
         };
         Update: {
           id?: string;
-          newsletter_id?: string;
-          contact_id?: string;
-          status?: 'pending' | 'sent' | 'failed';
-          sent_at?: string | null;
+          company_id?: string;
+          filename?: string;
+          status?: CsvUploadStatus;
           error_message?: string | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+      };
+      compiled_newsletters: {
+        Row: {
+          id: string;
+          newsletter_id: string;
+          html_content: string;
+          compiled_status: CompiledNewsletterStatus;
+          created_at: string | null;
+          updated_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          newsletter_id: string;
+          html_content: string;
+          compiled_status?: CompiledNewsletterStatus;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          newsletter_id?: string;
+          html_content?: string;
+          compiled_status?: CompiledNewsletterStatus;
           created_at?: string | null;
           updated_at?: string | null;
         };
@@ -253,10 +302,9 @@ export interface Database {
           newsletter_id: string;
           section_type: string;
           section_number: number;
-          status: NewsletterGenerationQueueStatus;
+          status: NewsletterSectionStatus;
           attempts: number;
           error_message: string | null;
-          last_attempt_at: string | null;
           created_at: string | null;
           updated_at: string | null;
         };
@@ -265,10 +313,9 @@ export interface Database {
           newsletter_id: string;
           section_type: string;
           section_number: number;
-          status?: NewsletterGenerationQueueStatus;
+          status?: NewsletterSectionStatus;
           attempts?: number;
           error_message?: string | null;
-          last_attempt_at?: string | null;
           created_at?: string | null;
           updated_at?: string | null;
         };
@@ -277,95 +324,9 @@ export interface Database {
           newsletter_id?: string;
           section_type?: string;
           section_number?: number;
-          status?: NewsletterGenerationQueueStatus;
+          status?: NewsletterSectionStatus;
           attempts?: number;
           error_message?: string | null;
-          last_attempt_at?: string | null;
-          created_at?: string | null;
-          updated_at?: string | null;
-        };
-      };
-      newsletter_sections: {
-        Row: {
-          id: string;
-          newsletter_id: string;
-          section_number: number;
-          title: string;
-          content: string;
-          image_prompt: string | null;
-          image_url: string | null;
-          status: 'active' | 'deleted';
-          created_at: string | null;
-          updated_at: string | null;
-        };
-        Insert: {
-          id?: string;
-          newsletter_id: string;
-          section_number: number;
-          title: string;
-          content: string;
-          image_prompt?: string | null;
-          image_url?: string | null;
-          status?: 'active' | 'deleted';
-          created_at?: string | null;
-          updated_at?: string | null;
-        };
-        Update: {
-          id?: string;
-          newsletter_id?: string;
-          section_number?: number;
-          title?: string;
-          content?: string;
-          image_prompt?: string | null;
-          image_url?: string | null;
-          status?: 'active' | 'deleted';
-          created_at?: string | null;
-          updated_at?: string | null;
-        };
-      };
-      newsletters: {
-        Row: {
-          id: string;
-          company_id: string;
-          subject: string;
-          draft_status: 'pending' | 'sent' | 'failed';
-          draft_recipient_email: string | null;
-          draft_sent_at: string | null;
-          status: 'draft' | 'draft_sent' | 'pending_contacts' | 'ready_to_send' | 'sending' | 'sent' | 'failed';
-          sent_at: string | null;
-          sent_count: number;
-          failed_count: number;
-          last_sent_status: string | null;
-          created_at: string | null;
-          updated_at: string | null;
-        };
-        Insert: {
-          id?: string;
-          company_id: string;
-          subject: string;
-          draft_status?: 'pending' | 'sent' | 'failed';
-          draft_recipient_email?: string | null;
-          draft_sent_at?: string | null;
-          status?: 'draft' | 'draft_sent' | 'pending_contacts' | 'ready_to_send' | 'sending' | 'sent' | 'failed';
-          sent_at?: string | null;
-          sent_count?: number;
-          failed_count?: number;
-          last_sent_status?: string | null;
-          created_at?: string | null;
-          updated_at?: string | null;
-        };
-        Update: {
-          id?: string;
-          company_id?: string;
-          subject?: string;
-          draft_status?: 'pending' | 'sent' | 'failed';
-          draft_recipient_email?: string | null;
-          draft_sent_at?: string | null;
-          status?: 'draft' | 'draft_sent' | 'pending_contacts' | 'ready_to_send' | 'sending' | 'sent' | 'failed';
-          sent_at?: string | null;
-          sent_count?: number;
-          failed_count?: number;
-          last_sent_status?: string | null;
           created_at?: string | null;
           updated_at?: string | null;
         };
@@ -378,9 +339,6 @@ export interface Database {
       [_ in never]: never;
     };
     Enums: {
-      [_ in never]: never;
-    };
-    CompositeTypes: {
       [_ in never]: never;
     };
   };

@@ -12,6 +12,7 @@ import type {
   NewsletterWithAll
 } from '@/types/email';
 import { APIError } from '@/utils/errors';
+import { withErrorHandler } from '@/utils/api-middleware';
 
 if (!process.env.BREVO_API_KEY || !process.env.BREVO_SENDER_EMAIL || !process.env.BREVO_SENDER_NAME) {
   throw new Error('Missing required Brevo environment variables');
@@ -21,7 +22,7 @@ if (!process.env.BREVO_API_KEY || !process.env.BREVO_SENDER_EMAIL || !process.en
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-export async function POST(req: Request) {
+export const POST = withErrorHandler(async (req: Request) => {
   const supabaseAdmin = getSupabaseAdmin();
   let newsletterId: string | undefined;
 
@@ -151,4 +152,4 @@ export async function POST(req: Request) {
       500
     );
   }
-}
+});

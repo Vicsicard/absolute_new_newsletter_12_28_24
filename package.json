@@ -2,6 +2,7 @@
   "name": "newsletter-app",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -10,13 +11,14 @@
     "test": "playwright test",
     "test:ui": "playwright test --ui",
     "test:debug": "playwright test --debug",
-    "monitor": "ts-node -r tsconfig-paths/register -P ./scripts/tsconfig.json scripts/verify-onboarding.ts",
-    "queue": "ts-node -r tsconfig-paths/register -P ./scripts/tsconfig.json scripts/monitor-queue.ts",
-    "process": "ts-node -r tsconfig-paths/register -P ./scripts/tsconfig.json scripts/process-queue.ts"
+    "monitor": "tsx -r tsconfig-paths/register scripts/verify-onboarding.ts",
+    "queue": "tsx -r tsconfig-paths/register scripts/monitor-queue.ts",
+    "process": "tsx -r tsconfig-paths/register scripts/process-queue.ts"
   },
   "dependencies": {
     "@headlessui/react": "^1.7.19",
     "@heroicons/react": "^2.2.0",
+    "@sendinblue/client": "^3.3.1",
     "@supabase/supabase-js": "^2.47.10",
     "@tailwindcss/forms": "^0.5.9",
     "@types/node": "20.10.5",
@@ -42,11 +44,15 @@
     "@types/chalk": "^0.4.31",
     "@types/dotenv": "^6.1.1",
     "@types/formidable": "^3.4.5",
+    "@types/node-fetch": "^2.6.12",
+    "chalk": "^5.4.1",
     "dotenv": "^16.4.7",
     "encoding": "^0.1.13",
+    "node-fetch": "^3.3.2",
     "supabase": "^2.2.1",
     "ts-node": "^10.9.2",
-    "tsconfig-paths": "^4.2.0"
+    "tsconfig-paths": "^4.2.0",
+    "tsx": "^4.19.2"
   },
   "engines": {
     "node": ">=18.0.0"

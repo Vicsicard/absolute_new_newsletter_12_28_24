@@ -1,3 +1,14 @@
+-- Create exec_sql function for migrations
+CREATE OR REPLACE FUNCTION exec_sql(sql text)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  EXECUTE sql;
+END;
+$$;
+
 -- Complete schema migration to match DATABASE_INDEXES.md exactly
 
 -- Create tables if they don't exist
@@ -38,7 +49,7 @@ CREATE TABLE IF NOT EXISTS newsletters (
 
 CREATE TABLE IF NOT EXISTS newsletter_sections (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    newsletter_id UUID REFERENCES newsletters(id),
+    newsletter_id UUID,
     section_number INTEGER NOT NULL,
     section_type TEXT NOT NULL DEFAULT 'welcome',
     title TEXT,
@@ -129,7 +140,9 @@ ALTER TABLE newsletters
 DROP CONSTRAINT IF EXISTS newsletters_pkey CASCADE,
 DROP CONSTRAINT IF EXISTS newsletters_draft_status_check CASCADE,
 DROP CONSTRAINT IF EXISTS newsletters_status_check CASCADE,
+DROP CONSTRAINT IF EXISTS newsletters_company_id_fkey CASCADE,
 ADD CONSTRAINT newsletters_pkey PRIMARY KEY (id),
+ADD CONSTRAINT newsletters_company_id_fkey FOREIGN KEY (company_id) REFERENCES companies(id),
 ALTER COLUMN draft_status SET DEFAULT 'draft',
 ADD CONSTRAINT newsletters_draft_status_check 
 CHECK (draft_status IN ('draft', 'draft_sent', 'pending_contacts', 'ready_to_send', 'sending', 'sent', 'failed')),
@@ -148,7 +161,9 @@ ALTER TABLE newsletter_sections
 DROP CONSTRAINT IF EXISTS newsletter_sections_pkey CASCADE,
 DROP CONSTRAINT IF EXISTS newsletter_sections_status_check CASCADE,
 DROP CONSTRAINT IF EXISTS newsletter_sections_newsletter_id_section_number_key CASCADE,
+DROP CONSTRAINT IF EXISTS newsletter_sections_newsletter_id_fkey CASCADE,
 ADD CONSTRAINT newsletter_sections_pkey PRIMARY KEY (id),
+ADD CONSTRAINT newsletter_sections_newsletter_id_fkey FOREIGN KEY (newsletter_id) REFERENCES newsletters(id),
 ADD COLUMN IF NOT EXISTS section_type TEXT NOT NULL DEFAULT 'welcome'
 CHECK (section_type IN ('welcome', 'industry_trends', 'practical_tips')),
 ALTER COLUMN status SET DEFAULT 'pending',

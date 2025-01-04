@@ -3,6 +3,10 @@ import * as dotenv from 'dotenv';
 import { join } from 'path';
 import { Database } from '../types/database';
 import { generateNewsletter } from '../utils/newsletter';
+import { sendNewsletterDraft } from '../utils/email';
+import { WorkflowState, WorkflowStepStatus } from '../types/workflow';
+import { WORKFLOW_STEPS, updateWorkflowStatus, advanceWorkflow, isStepComplete } from '../utils/workflow';
+import { logWorkflowEvent, logWorkflowError } from '../utils/monitoring';
 
 // Load environment variables
 dotenv.config({ path: join(process.cwd(), '.env.local') });
@@ -56,7 +60,17 @@ function initializeSupabase() {
 
 const supabase = initializeSupabase();
 
-type QueueItem = Database['public']['Tables']['newsletter_generation_queue']['Row'];
+interface QueueItem {
+  id: string;
+  newsletter_id: string;
+  section_type: string;
+  section_number: number;
+  status: string;
+  attempts: number;
+  error_message: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
 
 // Exponential backoff for retries
 function calculateRetryDelay(attempt: number): number {
@@ -124,11 +138,20 @@ async function checkHealthAndRecover() {
 }
 
 async function acquireNextQueueItem(): Promise<QueueItem | null> {
-  // Get the next pending item, respecting priority
+  // Get the next pending item, respecting priority and workflow state
   const { data: items, error: queryError } = await supabase
     .from('newsletter_generation_queue')
-    .select('*')
+    .select(`
+      *,
+      newsletters!inner (
+        workflow:newsletter_workflows!inner (
+          current_step,
+          step_status
+        )
+      )
+    `)
     .eq('status', 'pending')
+    .eq('newsletters.workflow.step_status', 'pending')
     .order('priority', { ascending: true })
     .order('created_at', { ascending: true })
     .limit(1);
@@ -140,73 +163,183 @@ async function acquireNextQueueItem(): Promise<QueueItem | null> {
   return items?.[0] || null;
 }
 
+async function processItemContent(item: QueueItem, workflow: any) {
+  // Get the newsletter data
+  const { data: newsletter, error: newsletterError } = await supabase
+    .from('newsletters')
+    .select('*')
+    .eq('id', item.newsletter_id)
+    .single();
+
+  if (newsletterError || !newsletter) {
+    throw new Error('Failed to fetch newsletter data');
+  }
+
+  // Get the company data
+  const { data: company, error: companyError } = await supabase
+    .from('companies')
+    .select('*')
+    .eq('id', newsletter.company_id)
+    .single();
+
+  if (companyError || !company) {
+    throw new Error('Failed to fetch company data');
+  }
+
+  // Generate the newsletter content
+  await generateNewsletter(item.newsletter_id, undefined, {
+    companyName: company.company_name,
+    industry: company.industry,
+    targetAudience: company.target_audience || undefined,
+    audienceDescription: company.audience_description || undefined
+  });
+}
+
 async function processQueueItem(item: QueueItem): Promise<void> {
   console.log(`Processing queue item ${item.id} (${item.section_type})`);
+  const startTime = Date.now();
   
   try {
-    // Update status to in_progress
+    // Get workflow state
+    const { data: workflow } = await supabase
+      .from('newsletter_workflows')
+      .select('*')
+      .eq('newsletter_id', item.newsletter_id)
+      .single();
+
+    if (!workflow) {
+      throw new Error('No workflow found for newsletter');
+    }
+
+    // Log step start
+    await logWorkflowEvent({
+      workflow_id: workflow.id,
+      newsletter_id: item.newsletter_id,
+      event_type: 'step_start',
+      step: workflow.current_step,
+      metadata: {
+        queue_item_id: item.id,
+        section_type: item.section_type
+      }
+    });
+
+    // Validate current step
+    const step = WORKFLOW_STEPS[workflow.current_step];
+    if (!await step.validates(item.newsletter_id)) {
+      throw new Error('Workflow validation failed');
+    }
+
+    // Update workflow status to in_progress
+    await updateWorkflowStatus(workflow.id, 'in_progress');
+
+    // Update queue item status
     await updateQueueItemStatus(item, 'in_progress');
 
-    // Get the newsletter data
-    const { data: newsletter, error: newsletterError } = await supabase
-      .from('newsletters')
-      .select('*')
-      .eq('id', item.newsletter_id)
-      .single();
-
-    if (newsletterError || !newsletter) {
-      throw new Error('Failed to fetch newsletter data');
-    }
-
-    // Get the company data
-    const { data: company, error: companyError } = await supabase
-      .from('companies')
-      .select('*')
-      .eq('id', newsletter.company_id)
-      .single();
-
-    if (companyError || !company) {
-      throw new Error('Failed to fetch company data');
-    }
-
-    // Generate the newsletter content
-    await generateNewsletter(item.newsletter_id, undefined, {
-      companyName: company.company_name,
-      industry: company.industry,
-      targetAudience: company.target_audience || undefined,
-      audienceDescription: company.audience_description || undefined
-    });
+    // Process the item
+    await processItemContent(item, workflow);
     
-    // Mark as completed
+    // Mark queue item as completed
     await updateQueueItemStatus(item, 'completed');
-    console.log(`Successfully completed queue item ${item.id}`);
+
+    // Log step completion
+    await logWorkflowEvent({
+      workflow_id: workflow.id,
+      newsletter_id: item.newsletter_id,
+      event_type: 'step_complete',
+      step: workflow.current_step,
+      duration_ms: Date.now() - startTime,
+      metadata: {
+        queue_item_id: item.id,
+        section_type: item.section_type
+      }
+    });
+
+    // Check if step is complete
+    if (await isStepComplete(workflow)) {
+      // Update workflow status
+      await updateWorkflowStatus(workflow.id, 'completed');
+      
+      // Log workflow completion if this was the last step
+      if (!WORKFLOW_STEPS[workflow.current_step].next) {
+        await logWorkflowEvent({
+          workflow_id: workflow.id,
+          newsletter_id: item.newsletter_id,
+          event_type: 'workflow_complete',
+          step: workflow.current_step,
+          duration_ms: Date.now() - startTime,
+          metadata: {
+            total_steps: Object.keys(WORKFLOW_STEPS).length
+          }
+        });
+      } else {
+        // Advance to next step
+        await advanceWorkflow(workflow.id);
+      }
+    }
     
   } catch (error) {
-    console.error(`Error processing queue item ${item.id}:`, error);
+    const errorInstance = error instanceof Error ? error : new Error(String(error));
+    console.error(`Error processing queue item ${item.id}:`, errorInstance);
     
-    // Determine if we should retry based on error type
-    const shouldRetry = item.attempts < MAX_ATTEMPTS && !(error instanceof OpenAIError && error.statusCode === 429);
-    
-    // Update failure status
+    // Get workflow to update
+    const { data: workflow } = await supabase
+      .from('newsletter_workflows')
+      .select('*')
+      .eq('newsletter_id', item.newsletter_id)
+      .single();
+
+    if (workflow) {
+      // Determine if we should retry based on error type and attempts
+      const shouldRetry = workflow.attempts < MAX_ATTEMPTS && 
+        !(error instanceof OpenAIError && error.statusCode === 429);
+
+      // Update workflow status
+      await updateWorkflowStatus(
+        workflow.id,
+        shouldRetry ? 'pending' : 'failed',
+        errorInstance
+      );
+
+      // Log workflow error
+      await logWorkflowError(errorInstance, {
+        workflow_id: workflow.id,
+        newsletter_id: item.newsletter_id,
+        step: workflow.current_step,
+        metadata: {
+          queue_item_id: item.id,
+          section_type: item.section_type,
+          attempts: workflow.attempts,
+          will_retry: shouldRetry
+        }
+      });
+
+      // Log workflow failure if we're not retrying
+      if (!shouldRetry) {
+        await logWorkflowEvent({
+          workflow_id: workflow.id,
+          newsletter_id: item.newsletter_id,
+          event_type: 'workflow_failed',
+          step: workflow.current_step,
+          duration_ms: Date.now() - startTime,
+          error_message: errorInstance.message,
+          metadata: {
+            queue_item_id: item.id,
+            section_type: item.section_type,
+            attempts: workflow.attempts
+          }
+        });
+      }
+    }
+
+    // Update queue item status
     await updateQueueItemStatus(
       item,
       shouldRetry ? 'pending' : 'failed',
-      error instanceof Error ? error : new Error(String(error))
-    );
-
-    // Log the error
-    await logError(
-      error instanceof Error ? error : new Error(String(error)),
-      {
-        item_id: item.id,
-        newsletter_id: item.newsletter_id,
-        section_type: item.section_type,
-        attempt: item.attempts
-      }
+      errorInstance
     );
 
     if (!shouldRetry) {
-      console.log(`Queue item ${item.id} has failed permanently after ${item.attempts} attempts`);
+      console.log(`Queue item ${item.id} has failed permanently after ${workflow?.attempts ?? 0} attempts`);
     }
   }
 }
@@ -288,3 +421,15 @@ process.on('uncaughtException', async (error) => {
 // Run initial check
 console.log('Starting queue monitor...\n');
 runWorker();
+
+// Add health check function
+async function checkWorkflowHealth(): Promise<void> {
+  try {
+    await detectAnomalies();
+  } catch (error) {
+    console.error('Failed to check workflow health:', error);
+  }
+}
+
+// Run health check every 5 minutes
+setInterval(checkWorkflowHealth, 5 * 60 * 1000);

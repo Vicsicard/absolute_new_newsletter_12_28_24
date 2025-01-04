@@ -121,3 +121,108 @@ export async function sendEmail(
     sent_at: new Date().toISOString()
   };
 }
+
+// Send newsletter draft to the contact email
+export async function sendNewsletterDraft(
+  newsletterId: string,
+  recipientEmail: string,
+  recipientName?: string
+): Promise<EmailResult> {
+  const supabaseAdmin = getSupabaseAdmin();
+
+  // Get newsletter data with company and sections
+  const { data: newsletter, error: newsletterError } = await supabaseAdmin
+    .from('newsletters')
+    .select(`
+      *,
+      company:companies (
+        company_name,
+        industry,
+        contact_email
+      ),
+      sections:newsletter_sections (
+        section_number,
+        title,
+        content,
+        image_url
+      )
+    `)
+    .eq('id', newsletterId)
+    .single();
+
+  if (newsletterError || !newsletter) {
+    throw new APIError('Failed to fetch newsletter data', 500);
+  }
+
+  if (!newsletter.sections || newsletter.sections.length === 0) {
+    throw new APIError('Newsletter has no sections', 400);
+  }
+
+  // Sort sections by section_number
+  const sortedSections = newsletter.sections.sort((a, b) => a.section_number - b.section_number);
+
+  // Create HTML content from sections
+  let htmlContent = `
+    <html>
+      <head>
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+          .section { margin: 20px 0; padding: 20px; background: #fff; }
+          .section-title { color: #2c5282; font-size: 24px; margin-bottom: 15px; }
+          .section-content { font-size: 16px; }
+          .section-image { max-width: 100%; height: auto; margin: 15px 0; }
+          .footer { margin-top: 30px; padding: 20px; background: #f7fafc; text-align: center; }
+        </style>
+      </head>
+      <body>
+        <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+  `;
+
+  // Add each section to the HTML
+  for (const section of sortedSections) {
+    htmlContent += `
+      <div class="section">
+        <h2 class="section-title">${section.title}</h2>
+        ${section.image_url ? `<img class="section-image" src="${section.image_url}" alt="${section.title}">` : ''}
+        <div class="section-content">${section.content}</div>
+      </div>
+    `;
+  }
+
+  // Add footer
+  htmlContent += `
+          <div class="footer">
+            <p>Generated for ${newsletter.company.company_name}</p>
+          </div>
+        </div>
+      </body>
+    </html>
+  `;
+
+  // Send the email
+  const result = await sendEmail(
+    {
+      email: recipientEmail,
+      name: recipientName
+    },
+    `${newsletter.company.company_name} Newsletter - Draft`,
+    htmlContent
+  );
+
+  // Update newsletter draft status
+  const { error: updateError } = await supabaseAdmin
+    .from('newsletters')
+    .update({
+      draft_status: 'draft_sent' as DraftStatus,
+      draft_sent_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    })
+    .eq('id', newsletterId);
+
+  if (updateError) {
+    console.error('Failed to update newsletter status:', updateError);
+    // Don't throw here as the email was sent successfully
+  }
+
+  return result;
+}

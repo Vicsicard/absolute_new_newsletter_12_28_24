@@ -141,6 +141,22 @@ CREATE TABLE newsletter_generation_queue (
 );
 ```
 
+### API Error Logs
+```sql
+CREATE TABLE api_error_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    endpoint TEXT NOT NULL,
+    method TEXT NOT NULL,
+    error_message TEXT NOT NULL,
+    error_code TEXT,
+    stack_trace TEXT,
+    user_id UUID,
+    metadata JSONB,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
 ## Constraints and Status Enums
 
 ### Newsletter Status Values
@@ -222,6 +238,13 @@ CREATE TABLE newsletter_generation_queue (
 - `newsletter_generation_queue_newsletter_id_section_type_key`: Unique index on `(newsletter_id, section_type)`
 - `newsletter_generation_queue_status_idx`: Index on `status`
 - `newsletter_generation_queue_newsletter_id_idx`: Index on `newsletter_id`
+
+### API Error Logs
+- `api_error_logs_pkey`: Primary key on `id`
+- `idx_api_error_logs_endpoint`: Index on `endpoint`
+- `idx_api_error_logs_method`: Index on `method`
+- `idx_api_error_logs_error_message`: Index on `error_message`
+- `idx_api_error_logs_user_id`: Index on `user_id`
 
 ## Notes
 - All tables include `created_at` and `updated_at` timestamps

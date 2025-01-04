@@ -1,47 +1,39 @@
-import { PlaywrightTestConfig } from '@playwright/test';
+import { defineConfig, devices } from '@playwright/test';
+import * as dotenv from 'dotenv';
+import { join } from 'path';
 
-const config: PlaywrightTestConfig = {
+// Load test environment variables
+dotenv.config({ path: join(process.cwd(), '.env.test') });
+
+export default defineConfig({
   testDir: './tests',
   timeout: 30000,
   expect: {
-    timeout: 10000
+    timeout: 5000
   },
+  fullyParallel: true,
+  forbidOnly: !!process.env.CI,
+  retries: process.env.CI ? 2 : 0,
+  workers: process.env.CI ? 1 : undefined,
+  reporter: 'html',
   use: {
-    baseURL: 'http://localhost:3000',
-    trace: 'on',
-    screenshot: 'on',
-    video: 'on',
-    headless: false,
-    viewport: { width: 1280, height: 720 },
-    launchOptions: {
-      slowMo: 1000,
-    }
+    actionTimeout: 0,
+    trace: 'on-first-retry',
   },
   projects: [
     {
       name: 'chromium',
-      use: {
-        browserName: 'chromium',
-      },
-    }
+      use: { ...devices['Desktop Chrome'] },
+    },
   ],
-  reporter: [
-    ['list'],
-    ['html'],
-    ['json', { outputFile: 'test-results/test-results.json' }]
-  ],
-  outputDir: 'test-results',
-  preserveOutput: 'always',
-  workers: 1,
-  retries: 0,
-  fullyParallel: false,
-  forbidOnly: true,
-  globalTimeout: 60000,
-  reportSlowTests: {
-    max: 5,
-    threshold: 15000
-  },
-  maxFailures: 1
-};
-
-export default config;
+  // Pass environment variables to test environment
+  env: {
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY || '',
+    SUPABASE_URL: process.env.SUPABASE_URL || '',
+    SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
+    BREVO_API_KEY: process.env.BREVO_API_KEY || '',
+    BREVO_SENDER_EMAIL: process.env.BREVO_SENDER_EMAIL || '',
+    BREVO_SENDER_NAME: process.env.BREVO_SENDER_NAME || '',
+    NODE_ENV: 'test'
+  }
+});

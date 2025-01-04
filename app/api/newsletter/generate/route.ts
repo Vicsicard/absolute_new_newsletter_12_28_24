@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { generateNewsletter } from '@/utils/newsletter';
 import { getSupabaseAdmin } from '@/utils/supabase-admin';
 import { APIError } from '@/utils/errors';
+import { withErrorHandler } from '@/utils/api-middleware';
 
 // Configure API route
 export const runtime = 'edge';
@@ -17,7 +18,7 @@ interface GenerateRequest {
   }[];
 }
 
-export async function POST(req: Request) {
+export const POST = withErrorHandler(async (req: Request) => {
   const supabaseAdmin = getSupabaseAdmin();
   
   try {
@@ -100,4 +101,4 @@ export async function POST(req: Request) {
       { status: error instanceof APIError ? error.statusCode : 500 }
     );
   }
-}
+});
