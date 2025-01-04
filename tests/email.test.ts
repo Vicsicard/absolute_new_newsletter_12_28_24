@@ -1,11 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { getSupabaseAdmin } from '../utils/supabase-admin';
 import { generateNewsletter } from '../utils/newsletter';
-import * as dotenv from 'dotenv';
-import { join } from 'path';
-
-// Load test environment variables
-dotenv.config({ path: join(process.cwd(), '.env.test') });
 
 // Set a longer timeout since newsletter generation can take up to 18 minutes
 test.describe('Email Integration Tests', () => {
