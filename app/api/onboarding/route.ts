@@ -5,7 +5,11 @@ import type { OnboardingResponse } from '@/types/api';
 import type { 
   Company,
   Newsletter,
-  NewsletterSection
+  NewsletterSection,
+  NewsletterStatus,
+  DraftStatus,
+  QueueItem,
+  CompiledNewsletter
 } from '@/types/email';
 
 // Configure API route
