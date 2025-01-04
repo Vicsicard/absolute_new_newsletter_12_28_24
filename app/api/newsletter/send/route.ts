@@ -53,7 +53,8 @@ export const POST = withErrorHandler(async (req: Request) => {
           contact:contacts!inner (
             email,
             first_name,
-            last_name
+            last_name,
+            name
           )
         )
       `)

@@ -58,7 +58,8 @@ export type Contact = {
   id: string;
   company_id: string;
   email: string;
-  name: string | null;
+  first_name: string | null;
+  last_name: string | null;
   status: ContactStatus;
   created_at: string | null;
   updated_at: string | null;
