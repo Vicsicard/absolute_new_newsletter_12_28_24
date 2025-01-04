@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server';
 import { withErrorHandler } from '@/utils/api-middleware';
 import { getSupabaseAdmin } from '@/utils/supabase-admin';
 import type { OnboardingResponse } from '@/types/api';
-import type { Request } from '@/types/api';
 import type { 
   Company,
   Newsletter,
