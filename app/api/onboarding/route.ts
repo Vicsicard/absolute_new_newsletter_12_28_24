@@ -1,13 +1,12 @@
 import { NextResponse } from 'next/server';
+import { withErrorHandler } from '@/utils/api-middleware';
 import { getSupabaseAdmin } from '@/utils/supabase-admin';
 import type { OnboardingResponse } from '@/types/api';
-import { NextRequest } from 'next/server';
-import { withErrorHandler } from '@/utils/api-middleware';
+import type { Request } from '@/types/api';
 import type { 
   Company,
   Newsletter,
-  NewsletterStatus,
-  DraftStatus
+  NewsletterSection
 } from '@/types/email';
 
 // Configure API route
@@ -15,7 +14,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300; // Set max duration to 5 minutes
 
-export const POST = withErrorHandler(async (req: NextRequest) => {
+export const POST = withErrorHandler(async (req: Request) => {
   console.log('Starting onboarding process...');
   const supabaseAdmin = getSupabaseAdmin();
   
