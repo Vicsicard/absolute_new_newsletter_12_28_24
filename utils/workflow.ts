@@ -107,7 +107,7 @@ export const WORKFLOW_STEPS: Record<WorkflowStep, WorkflowStepConfig> = {
       return newsletter?.draft_status === 'draft_sent';
     }
   }
-};
+} as const;
 
 export async function initializeWorkflow(newsletterId: string): Promise<WorkflowState> {
   const { data: existing } = await supabase
@@ -124,8 +124,8 @@ export async function initializeWorkflow(newsletterId: string): Promise<Workflow
     .from('newsletter_workflows')
     .insert({
       newsletter_id: newsletterId,
-      current_step: 'INIT',
-      step_status: 'pending'
+      current_step: 'INIT' as WorkflowStep,
+      step_status: 'pending' as WorkflowStepStatus
     })
     .select()
     .single();
@@ -142,14 +142,21 @@ export async function updateWorkflowStatus(
   status: WorkflowStepStatus,
   error?: Error
 ): Promise<WorkflowState> {
+  // First get the current attempts count
+  const { data: currentWorkflow } = await supabase
+    .from('newsletter_workflows')
+    .select('attempts')
+    .eq('id', workflowId)
+    .single();
+
   const updates: Partial<WorkflowState> = {
     step_status: status,
-    updated_at: new Date().toISOString()
+    updated_at: new Date().toISOString(),
+    attempts: (currentWorkflow?.attempts ?? 0) + (error ? 1 : 0)
   };
 
   if (error) {
     updates.error_message = error.message;
-    updates.attempts = supabase.rpc('increment_attempts', { workflow_id: workflowId });
   }
 
   const { data: workflow, error: updateError } = await supabase
@@ -178,7 +185,7 @@ export async function advanceWorkflow(workflowId: string): Promise<WorkflowState
     throw new Error('Workflow not found');
   }
 
-  const currentStep = WORKFLOW_STEPS[workflow.current_step];
+  const currentStep = WORKFLOW_STEPS[workflow.current_step as WorkflowStep];
   if (!currentStep.next) {
     // Workflow is complete
     return workflow;
@@ -189,7 +196,7 @@ export async function advanceWorkflow(workflowId: string): Promise<WorkflowState
     .from('newsletter_workflows')
     .update({
       current_step: currentStep.next,
-      step_status: 'pending',
+      step_status: 'pending' as WorkflowStepStatus,
       attempts: 0,
       error_message: null,
       step_data: null
@@ -203,7 +210,7 @@ export async function advanceWorkflow(workflowId: string): Promise<WorkflowState
   }
 
   // If next step has queue items, create them
-  const nextStep = WORKFLOW_STEPS[currentStep.next];
+  const nextStep = WORKFLOW_STEPS[currentStep.next as WorkflowStep];
   if (nextStep.queueItems) {
     for (const item of nextStep.queueItems) {
       await supabase
@@ -221,7 +228,7 @@ export async function advanceWorkflow(workflowId: string): Promise<WorkflowState
 }
 
 export async function isStepComplete(workflow: WorkflowState): Promise<boolean> {
-  const step = WORKFLOW_STEPS[workflow.current_step];
+  const step = WORKFLOW_STEPS[workflow.current_step as WorkflowStep];
   
   if (workflow.step_status !== 'completed') {
     return false;
