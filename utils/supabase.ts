@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { Database } from '@/types/database'
+import { NewsletterStatus, Newsletter, Company, Contact, NewsletterContact, NewsletterSection, CompiledNewsletter } from '@/types/email'
 
 if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
   throw new Error('Missing env.NEXT_PUBLIC_SUPABASE_URL')
@@ -7,13 +8,6 @@ if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
 if (!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
   throw new Error('Missing env.NEXT_PUBLIC_SUPABASE_ANON_KEY')
 }
-
-type Company = Database['public']['Tables']['companies']['Row']
-type Newsletter = Database['public']['Tables']['newsletters']['Row']
-type Contact = Database['public']['Tables']['contacts']['Row']
-type NewsletterContact = Database['public']['Tables']['newsletter_contacts']['Row']
-type NewsletterSection = Database['public']['Tables']['newsletter_sections']['Row']
-type CompiledNewsletter = Database['public']['Tables']['compiled_newsletters']['Row']
 
 // Create a single supabase client for interacting with your database
 export const supabase = createClient<Database>(
@@ -82,7 +76,7 @@ export async function getActiveContacts(companyId: string): Promise<Contact[]> {
  */
 export async function updateNewsletterStatus(
   id: string,
-  status: 'draft' | 'sent' | 'failed',
+  status: NewsletterStatus,
   sentAt?: string | null
 ): Promise<void> {
   const updateData: Partial<Newsletter> = {
@@ -99,7 +93,6 @@ export async function updateNewsletterStatus(
     .eq('id', id)
 
   if (error) {
-    console.error('Failed to update newsletter status:', error)
     throw error
   }
 }
