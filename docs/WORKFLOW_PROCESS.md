@@ -42,21 +42,27 @@
    - Table: `compiled_newsletters`
    - Status: `pending` -> `completed`
    - Updates newsletter.draft_status to `ready_to_send`
+   - Next Step: Email Sending
+
+7. **Email Sending**
+   - Table: `email_queue`
+   - Status: `pending` -> `sending` -> `sent`
+   - Updates newsletter.draft_status to `sent`
    - Next Step: Draft Review
 
-7. **Draft Review**
+8. **Draft Review**
    - Table: `newsletters`
-   - Status: `ready_to_send` -> `draft_sent`
+   - Status: `sent` -> `draft_sent`
    - Sends draft email
    - Next Step: Await Approval
 
-8. **Approval & Contact Selection**
+9. **Approval & Contact Selection**
    - Table: `newsletters`
    - Status: `draft_sent` -> `pending_contacts`
    - Creates entries in `newsletter_contacts`
    - Next Step: Final Send
 
-9. **Final Send**
+10. **Final Send**
    - Tables:
      - `newsletters`
      - `newsletter_contacts`
@@ -124,344 +130,463 @@
    - Each section moves through states:
      - `pending` → `in_progress` → `completed`
 
-### Testing Process
+3. **Email Sending**
+   - Table: `email_queue`
+   - Status: `pending` -> `sending` -> `sent`
+   - Updates newsletter.draft_status to `sent`
 
-1. **Setup Test Environment**
-   - Run `/test/setup_test_data.sql`
-   - Verify data creation with diagnostic queries:
-     ```sql
-     -- Check newsletter and company
-     SELECT n.subject, n.status, n.draft_status, c.company_name
-     FROM newsletters n
-     JOIN companies c ON n.company_id = c.id
-     WHERE c.company_name = 'TechCorp Solutions';
+### Email Sending Workflow
 
-     -- Check sections
-     SELECT ns.section_number, ns.section_type, ns.status as section_status, ns.title
-     FROM newsletter_sections ns
-     JOIN newsletters n ON ns.newsletter_id = n.id
-     JOIN companies c ON n.company_id = c.id
-     WHERE c.company_name = 'TechCorp Solutions'
-     ORDER BY ns.section_number;
+### Status Flow
+1. **Section Completion**
+   - All sections marked as 'completed'
+   - Triggers `check_sections_completion()`
+   - Newsletter compiled and marked as 'ready'
 
-     -- Check queue items
-     SELECT nq.section_type, nq.section_number, nq.status as queue_status, nq.attempts
-     FROM newsletter_generation_queue nq
-     JOIN newsletters n ON nq.newsletter_id = n.id
-     JOIN companies c ON n.company_id = c.id
-     WHERE c.company_name = 'TechCorp Solutions'
-     ORDER BY nq.section_number;
-     ```
+2. **Email Queue Creation**
+   - Newsletter status → 'ready_to_send'
+   - Email queued with status 'pending'
+   - Recipient email copied from newsletter.draft_recipient_email
 
-2. **Monitor Processing**
-   - Watch queue items progress through states
-   - Verify section content generation
-   - Check email delivery
-   - Monitor for any errors or delays
+3. **Email Processing**
+   - Email queue status → 'sending'
+   - Newsletter status → 'sending'
+   - Content taken from compiled_newsletters.html_content
 
-3. **Cleanup After Testing**
-   - Re-run setup script to reset test data
-   - Or manually clean up using DELETE statements in proper order
+4. **Completion**
+   - Success: 
+     - Email status → 'sent'
+     - Newsletter status → 'sent' and 'published'
+   - Failure:
+     - Email status → 'failed'
+     - Newsletter status → 'failed'
 
-## Current Status: 
-- Sequential processing working correctly
-- Automatic state transitions implemented
-- Email queuing integrated
-- Error handling and logging in place
-- Status tracking operational
+### Status Values
+1. **Newsletter Status**
+   - `draft`: Initial state
+   - `ready_to_send`: All sections completed
+   - `sending`: Email in process
+   - `sent`: Email delivered
+   - `failed`: Email failed
+   - `published`: Newsletter fully processed
 
-## Current Status (Updated: 2025-01-04)
+2. **Email Queue Status**
+   - `pending`: Ready to send
+   - `sending`: In process
+   - `sent`: Successfully delivered
+   - `failed`: Failed to send
 
-### Core Components
-- OpenAI Integration
-- Queue Management
-- Email Integration
+3. **Section Status**
+   - `pending`: Not started
+   - `in_progress`: Being worked on
+   - `completed`: Done
+   - `failed`: Error occurred
 
-### Process Flow
-1. Newsletter Creation
-   - Creates company and newsletter records
-   - Initializes sections
-   - Status: Working
+### Error Handling
+1. **Timeout Handling**
+   - Emails stuck in 'pending' or 'sending' for > 5 minutes marked as failed
+   - Automatic cleanup process resets stuck newsletters
+   - Error messages logged in api_error_logs
 
-2. Queue Management
-   - Creates queue items for each section
-   - Tracks processing status
-   - Status: Working
+2. **Duplicate Prevention**
+   - Unique constraint on email_queue(newsletter_id)
+   - Transaction-level consistency in status updates
+   - Race condition prevention in triggers
 
-3. Content Generation
-   - Uses GPT-4 for section content
-   - Extracts titles and formats content
-   - Status: Working
+### Database Tables
+1. **newsletters**
+   - Tracks overall newsletter status
+   - Contains draft recipient email
+   - Links to all related entities
 
-4. Image Generation
-   - Uses DALL-E 3 for section images
-   - Creates abstract, professional visuals
-   - Status: Working
+2. **newsletter_sections**
+   - Individual section content
+   - Status tracking per section
+   - Ordered by section_number
 
-5. Email Delivery
-   - Sends drafts via Brevo
-   - Updates newsletter status
-   - Status: Working
+3. **compiled_newsletters**
+   - Combined HTML content
+   - Compilation status
+   - One-to-one with newsletters
 
-### Scripts and Tools
-- `workflow-processor.js`: Main worker process 
-- `test-workflow.js`: Testing utility 
-- `cleanup-newsletters.js`: Database cleanup utility 
+4. **email_queue**
+   - Email sending status
+   - Recipient information
+   - Error tracking
 
-### Testing Status
-- Basic workflow: Tested
-- Content generation: Tested
-- Image generation: Tested
-- Email delivery: Tested
-- Error handling: Basic Implementation
+5. **api_error_logs**
+   - Detailed error tracking
+   - Status transition logging
+   - API response logging
 
-### Environment Requirements
-Required variables in `.env.local`:
-- `SUPABASE_URL`
-- `SUPABASE_SERVICE_ROLE_KEY`
-- `OPENAI_API_KEY`
-- `BREVO_API_KEY`
-- `BREVO_SENDER_EMAIL`
-- `BREVO_SENDER_NAME`
-
-### Known Issues
-- None critical at this time
-- Performance metrics needed
-- Retry mechanism could be enhanced
-
-### Next Steps
-1. **Monitoring & Metrics**
-   - Add timing information
-   - Track API usage
-   - Monitor rate limits
-   - Status: Planned
-
-2. **Error Handling**
-   - Add comprehensive retry mechanism
-   - Add error reporting
-   - Add alerting system
-   - Status: Planned
-
-3. **Performance**
-   - Add caching
-   - Optimize database queries
-   - Add rate limiting
-   - Status: Planned
-
-4. **User Interface**
-   - Add progress visualization
-   - Add content preview
-   - Add manual controls
-   - Status: Planned
-
-### Running the System
-
-1. Start the worker process:
-   ```bash
-   node workers/workflow-processor.js
+### Monitoring
+1. **Stuck Items**
+   ```sql
+   SELECT 
+       n.subject,
+       n.draft_status,
+       eq.status as email_status,
+       eq.created_at as queued_at,
+       eq.updated_at as last_update,
+       CASE 
+           WHEN eq.updated_at < NOW() - INTERVAL '5 minutes' THEN 'Stuck'
+           ELSE 'Active'
+       END as queue_state
+   FROM newsletters n
+   JOIN email_queue eq ON eq.newsletter_id = n.id
+   ORDER BY eq.created_at DESC;
    ```
 
-2. Run tests:
-   ```bash
-   node scripts/test-workflow.js
+2. **Error Logs**
+   ```sql
+   SELECT 
+       created_at,
+       endpoint,
+       error_message,
+       metadata
+   FROM api_error_logs
+   WHERE endpoint = 'email_queue'
+   ORDER BY created_at DESC;
    ```
 
-3. Clean database:
-   ```bash
-   node scripts/cleanup-newsletters.js
+### Maintenance
+1. **Cleanup Function**
+   ```sql
+   SELECT cleanup_stuck_emails();
+   ```
+   - Runs automatically via trigger
+   - Can be manually executed
+   - Logs all cleanup actions
+
+2. **Status Reset**
+   ```sql
+   UPDATE newsletters
+   SET draft_status = 'draft'
+   WHERE draft_status = 'sending'
+   AND updated_at < NOW() - INTERVAL '5 minutes';
    ```
 
-### Security Notes
-- Using service role key for database operations
-- Environment variables properly secured
-- No sensitive data in logs
-- API keys properly managed
+## System Maintenance and Monitoring
 
-### Maintenance Tasks
-- Monitor worker process health
-- Check queue processing times
-- Review error logs
-- Clean up test data periodically
-- Monitor API usage and limits
+### Automated Health Checks
 
-### Database Schema
-- `newsletters`: Stores newsletter information
-- `newsletter_sections`: Stores individual sections
-- `newsletter_generation_queue`: Manages processing queue
-- `companies`: Stores company information
+The system performs automated health checks for:
+1. **Newsletter Status**
+   - Stuck newsletters (> 30 minutes in sending)
+   - Failed newsletters
+   - Content generation issues
+   - Email queue status
 
-### API Integration
-1. **OpenAI**
-   - GPT-4 for content
-   - DALL-E 3 for images
-   - Rate limits respected
+2. **System Alerts**
+   - Automatic email notifications to vicsicard@gmail.com
+   - Priority-based alerting
+   - Detailed error tracking
+   - Status monitoring
 
-2. **Brevo**
-   - SMTP email sending
-   - HTML templates
-   - Error handling
+3. **Maintenance Tasks**
+   - Cleanup of stuck newsletters
+   - Reset of failed processes
+   - System health logging
+   - Alert processing
 
-3. **Supabase**
-   - Real-time updates
-   - Row level security
-   - Foreign key constraints
+### Monitoring Dashboard
 
-## Newsletter Workflow Process
+Check system health using:
+```sql
+-- Quick health check
+SELECT * FROM system_health_dashboard;
 
-## Overview
-The newsletter generation and delivery process follows a structured workflow with multiple stages and status transitions.
+-- Detailed system summary
+SELECT * FROM get_system_summary();
 
-## Workflow Stages
+-- View pending alerts
+SELECT * FROM alert_monitor;
+```
 
-### 1. Content Generation
-- Sections are processed in order: welcome → industry_trends → practical_tips
-- Each section moves through states: pending → in_progress → completed
-- Automatic progression to next section via database triggers
-- All sections must be completed before compilation
+### Alert Thresholds
 
-### 2. Newsletter Compilation
-- Triggers when all sections are completed
-- Combines section content into HTML format
-- Creates entry in `compiled_newsletters` table
-- Sets compiled_status to 'ready' when complete
+1. **Email Sending**
+   - Timeout: 30 minutes
+   - Status: Automatic reset and alert
 
-### 3. Email Queue Management
-- Creates queue entries for all active contacts
-- Tracks delivery status per recipient
-- Updates sent_at timestamp on successful delivery
-- Handles individual recipient status tracking
+2. **Content Generation**
+   - Timeout: 60 minutes
+   - Status: Automatic reset and alert
 
-### 4. Status Transitions
-Newsletter Status:
-- draft → published → archived
+3. **System Health**
+   - Check Frequency: Every 15 minutes
+   - Alert Conditions:
+     - Stuck newsletters
+     - Failed processes
+     - Queue buildup
 
-Draft Status:
-- draft → ready_to_send → sending → sent
+### Maintenance Schedule
 
-Section Status:
-- pending → in_progress → completed
+1. **Health Checks**
+   ```sql
+   -- Run every 15 minutes
+   SELECT check_system_health();
+   ```
 
-Email Status:
-- pending → sent (or failed)
+2. **Cleanup Process**
+   ```sql
+   -- Run every 30 minutes
+   SELECT maintenance_cleanup_stuck_newsletters();
+   ```
 
-## Testing and Verification
+3. **Alert Processing**
+   ```sql
+   -- Run every 5 minutes
+   SELECT process_system_alerts();
+   ```
 
-### Test Data Setup
-- Use `setup_test_data.sql` for creating test environment
-- Creates test company and newsletter
-- Initializes sections and queue items
+### Monitoring Views
 
-### Status Verification Queries
+1. **System Health Dashboard**
+   - Overall system status
+   - Newsletter counts by state
+   - Alert counts
+   - Maintenance statistics
+
+2. **Alert Monitor**
+   - Pending alerts
+   - Alert history
+   - Response times
+   - Alert categories
+
+3. **Maintenance Logs**
+   - Cleanup operations
+   - Reset actions
+   - System interventions
+   - Success/failure tracking
+
+### Recovery Procedures
+
+1. **Stuck Newsletters**
+   ```sql
+   -- Manual reset if needed
+   UPDATE newsletters 
+   SET draft_status = 'draft',
+       error_message = NULL,
+       updated_at = NOW()
+   WHERE draft_status = 'failed';
+   ```
+
+2. **Failed Email Queue**
+   ```sql
+   -- Reset failed queue items
+   UPDATE email_queue
+   SET status = 'pending',
+       error_message = NULL,
+       updated_at = NOW()
+   WHERE status = 'failed';
+   ```
+
+### Best Practices
+
+1. **Regular Monitoring**
+   - Check system_health_dashboard daily
+   - Review alert_monitor for patterns
+   - Investigate repeated failures
+
+2. **Maintenance**
+   - Keep maintenance_logs for 30 days
+   - Review error patterns weekly
+   - Adjust timeouts if needed
+
+3. **Alerts**
+   - Acknowledge alerts promptly
+   - Document recurring issues
+   - Update contact email if needed
+
+### Troubleshooting
+
+1. **High Alert Volume**
+   - Check for API issues
+   - Review timeout settings
+   - Monitor system resources
+
+2. **Stuck Processes**
+   - Review error messages
+   - Check API responses
+   - Verify network connectivity
+
+3. **System Health**
+   - Monitor database connections
+   - Check API rate limits
+   - Verify email service status
+
+### Contact Information
+
+For system alerts and maintenance:
+- Email: vicsicard@gmail.com
+- Alert Types: Failures, Stuck Items, System Health
+- Response Time: 15-30 minutes
+
+## Status Monitoring
+
+### Newsletter States
+1. **Draft Stage**
+   - `needs_sections`: Newsletter created but no sections added
+   - `sections_pending`: Some sections incomplete
+   - `ready_to_compile`: All sections completed
+
+2. **Sending Stage**
+   - `ready_for_queue`: Ready to be picked up by email worker
+   - `queued`: In email queue
+   - `sending`: Email being sent
+   - `completed`: Successfully sent
+   - `failed`: Failed to send
+
+### Health Monitoring
 ```sql
 -- Check newsletter status
 SELECT 
-    n.subject,
-    n.status as newsletter_status,
-    n.draft_status,
-    eq.recipient_email,
-    eq.status as email_status,
-    eq.sent_at,
-    cn.compiled_status
-FROM newsletters n
-JOIN companies c ON n.company_id = c.id
-JOIN email_queue eq ON eq.newsletter_id = n.id
-JOIN compiled_newsletters cn ON cn.newsletter_id = n.id
-WHERE c.company_name = '[COMPANY_NAME]';
-
--- Check section completion
-SELECT 
-    section_type,
-    section_number,
-    status,
-    updated_at
-FROM newsletter_sections
-WHERE newsletter_id = '[NEWSLETTER_ID]'
-ORDER BY section_number;
+    subject,
+    workflow_state,
+    priority,
+    total_sections,
+    completed_sections,
+    email_status,
+    email_health,
+    minutes_since_update,
+    recommended_action,
+    status_message
+FROM newsletter_status_monitor
+ORDER BY 
+    CASE priority 
+        WHEN 'high' THEN 1 
+        WHEN 'medium' THEN 2 
+        ELSE 3 
+    END,
+    newsletter_created DESC;
 ```
 
-## Error Handling
-- Failed sections remain in 'failed' status
-- Email delivery failures tracked in email_queue
-- Error messages stored for debugging
-- Retry mechanism for failed queue items
+### Priority Levels
+- **High**: 
+  - Stuck emails
+  - Failed newsletters
+  - Error conditions
+- **Medium**:
+  - Active sending
+  - Ready to send
+- **Low**:
+  - Draft state
+  - Completed newsletters
 
-## Best Practices
-1. Always verify section completion before compilation
-2. Monitor email queue status for delivery issues
-3. Check error messages for failed items
-4. Use test data for workflow verification
-5. Maintain proper status transitions
+### Health Indicators
+1. **Email Health**
+   - `active`: Currently sending
+   - `stuck`: No updates for > 5 minutes
+   - `failed`: Failed to send
+   - `sent`: Successfully delivered
 
-## Monitoring
-- Track section completion times
-- Monitor email delivery success rates
-- Check for stuck items in queue
-- Review error logs regularly
+2. **Section Status**
+   - Total sections vs completed sections
+   - All sections must be completed before sending
 
-Last Updated: January 4, 2025
+3. **Time Tracking**
+   - Minutes since last update
+   - Automatic cleanup after 5 minutes stuck
 
-## Database Changes Needed
+### Maintenance Procedures
 
-1. Add new table `workflow_processes`:
+1. **Cleanup Stuck Newsletters**
 ```sql
-CREATE TABLE workflow_processes (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    newsletter_id UUID REFERENCES newsletters(id),
-    current_step TEXT NOT NULL,
-    step_status TEXT NOT NULL DEFAULT 'pending',
-    started_at TIMESTAMPTZ,
-    completed_at TIMESTAMPTZ,
-    error_message TEXT,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
+-- Reset stuck newsletters
+SELECT * FROM cleanup_stuck_newsletters();
 ```
 
-2. Add new table `workflow_step_logs`:
+2. **Prevent Duplicates**
 ```sql
-CREATE TABLE workflow_step_logs (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    process_id UUID REFERENCES workflow_processes(id),
-    step_name TEXT NOT NULL,
-    status TEXT NOT NULL,
-    started_at TIMESTAMPTZ DEFAULT NOW(),
-    completed_at TIMESTAMPTZ,
-    error_message TEXT,
-    metadata JSONB,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
+-- Unique index on draft newsletters
+CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_draft_newsletter_subject 
+ON newsletters (subject) 
+WHERE draft_status = 'draft';
 ```
 
-## Queue Processor Logic
+3. **Monitor Email Queue**
+```sql
+-- Check for stuck emails
+SELECT *
+FROM newsletter_status_monitor
+WHERE email_health = 'stuck'
+ORDER BY minutes_since_update DESC;
+```
 
-The queue processor should:
+### Best Practices
 
-1. Find active workflow processes
-2. For each process:
-   - Check current step status
-   - If completed, trigger next step
-   - If failed, handle error and retry logic
-   - Update workflow_step_logs
+1. **Regular Monitoring**
+   - Check newsletter_status_monitor every 5 minutes
+   - Review high priority items immediately
+   - Monitor email sending success rate
 
-## Status Transitions
+2. **Error Handling**
+   - Review api_error_logs for failed newsletters
+   - Reset stuck newsletters promptly
+   - Verify Brevo API status on failures
 
-Each step follows this status pattern:
-1. `pending` - Step is waiting to start
-2. `in_progress` - Step is currently executing
-3. `completed` - Step finished successfully
-4. `failed` - Step encountered an error
+3. **Data Maintenance**
+   - Clean up completed newsletters weekly
+   - Archive old newsletters monthly
+   - Maintain unique newsletter subjects
 
-Error handling:
-- If a step fails, it can be retried up to 3 times
-- After 3 failures, mark as permanently failed
-- Manual intervention required for permanently failed steps
+4. **Performance**
+   - Index maintenance
+   - Queue processing optimization
+   - Status update efficiency
 
-## Implementation Notes
+### Troubleshooting Guide
 
-1. Each step should be idempotent
-2. Steps should handle partial completion
-3. Each step transition should be logged
-4. Error states should be clearly tracked
-5. Manual override capability should exist
-6. Each step should validate prerequisites before starting
+1. **Stuck Newsletters**
+   - Check email_queue status
+   - Review api_error_logs
+   - Run cleanup_stuck_newsletters()
+   - Verify Brevo API status
+
+2. **Missing Sections**
+   - Verify section creation
+   - Check completion triggers
+   - Review section content
+
+3. **Failed Sending**
+   - Check Brevo API response
+   - Verify email format
+   - Check recipient address
+
+### Recovery Procedures
+
+1. **Reset Failed Newsletter**
+```sql
+UPDATE newsletters
+SET draft_status = 'draft'
+WHERE draft_status = 'failed';
+```
+
+2. **Requeue Email**
+```sql
+UPDATE email_queue
+SET status = 'pending',
+    updated_at = NOW()
+WHERE status = 'failed';
+```
+
+3. **Reset Stuck Process**
+```sql
+SELECT * FROM reset_stuck_newsletter(newsletter_id);
+```
+
+## Integration Testing
+Test the complete workflow using:
+```sql
+-- Create test newsletter
+INSERT INTO newsletters (subject, draft_recipient_email, draft_status)
+VALUES ('Test Newsletter', 'test@example.com', 'draft');
+
+-- Create and complete sections
+-- Monitor status transitions
+-- Check email queue
+-- Verify final states
+```
+
+For detailed test cases, see BREVO_INTEGRATION.md

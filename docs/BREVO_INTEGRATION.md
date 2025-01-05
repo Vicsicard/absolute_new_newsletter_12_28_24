@@ -21,22 +21,56 @@ BREVO_SENDER_NAME=your-sender-name
 ```
 
 ## Implementation
-The email sending functionality is implemented in the workflow processor:
+The email sending functionality is implemented in two main components:
 
-1. **Email Generation**
-   - Converts newsletter sections to HTML
-   - Includes generated images
-   - Formats content properly
+1. **Email Service** (`src/services/email-service.ts`)
+   - Handles direct interaction with Brevo API
+   - Manages database transactions
+   - Updates newsletter and email queue statuses
+   - Comprehensive error logging
+   - Uses transaction rollback for data consistency
 
-2. **Sending Process**
-   - Triggers when all sections complete
-   - Uses Brevo API v3
-   - Updates status after sending
+2. **Email Worker** (`src/workers/email-worker.ts`)
+   - Background process checking queue every 30 seconds
+   - Uses FOR UPDATE SKIP LOCKED for safe concurrent processing
+   - Picks up newsletters marked as 'sending'
+   - Delegates to email service for actual sending
 
-3. **Error Handling**
-   - Catches API errors
-   - Retries on failure
-   - Updates status accordingly
+3. **Database Flow**
+   - Newsletter marked as 'ready_to_send'
+   - Email queued with 'pending' status
+   - Worker picks up and updates to 'sending'
+   - Final status: 'sent' or 'failed'
+
+4. **Error Handling**
+   - Catches and logs all API errors
+   - Maintains transaction consistency
+   - Updates both newsletter and email statuses
+   - Detailed error logging in api_error_logs table
+
+## Monitoring
+The system includes comprehensive monitoring through the `newsletter_status_monitor` view:
+
+### Status Indicators
+- `workflow_state`: Current state in the process
+- `priority`: High/Medium/Low based on state
+- `email_health`: Active/Stuck/Failed
+- `status_message`: Detailed status information
+
+### Health Checks
+- Emails stuck in 'sending' > 5 minutes
+- Missing or incomplete sections
+- Failed processing attempts
+- Duplicate prevention
+
+### Recommended Actions
+Based on the newsletter state:
+- "Add newsletter sections"
+- "Complete remaining sections"
+- "Trigger compilation"
+- "Queue for sending"
+- "Reset stuck email"
+- "Check error logs and retry"
 
 ## Testing
 - ✅ Email sending tested
