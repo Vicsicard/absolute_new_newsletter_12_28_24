@@ -10,6 +10,7 @@
     "test": "playwright test",
     "test:ui": "playwright test --ui",
     "test:debug": "playwright test --debug",
+    "type-check": "tsc --noEmit",
     "monitor": "tsx -r tsconfig-paths/register scripts/verify-onboarding.ts",
     "queue": "tsx -r tsconfig-paths/register scripts/monitor-queue.ts",
     "process": "tsx -r tsconfig-paths/register scripts/process-queue.ts"

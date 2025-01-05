@@ -7,7 +7,9 @@ import {
   EmailContact,
   NewsletterStatus,
   DraftStatus,
-  NewsletterContactStatus 
+  NewsletterContactStatus,
+  NewsletterSection,
+  NewsletterWithAll
 } from '@/types/email';
 
 // Brevo API types
@@ -202,7 +204,7 @@ export async function sendNewsletterDraft(
   }
 
   // Sort sections by section_number
-  const sortedSections = newsletter.sections.sort((a, b) => a.section_number - b.section_number);
+  const sortedSections = newsletter.sections.sort((a: NewsletterSection, b: NewsletterSection) => a.section_number - b.section_number);
 
   // Create HTML content from sections
   let htmlContent = `
@@ -246,7 +248,7 @@ export async function sendNewsletterDraft(
   const result = await sendEmail(
     {
       email: recipientEmail,
-      name: recipientName
+      name: recipientName || null
     },
     `${newsletter.company.company_name} Newsletter - Draft`,
     htmlContent
