@@ -66,7 +66,7 @@ setInterval(() => {
 }, 60 * 60 * 1000);
 
 // Send a single email using Brevo REST API with retries
-async function sendBrevoEmailWithLimit(request: BrevoEmailRequest, estimatedTokens: number): Promise<BrevoEmailResponse> {
+export async function sendBrevoEmailWithLimit(request: BrevoEmailRequest, estimatedTokens: number): Promise<BrevoEmailResponse> {
     return limiter.schedule(async () => {
         if (tokenUsage + estimatedTokens > tokenLimit) {
             console.log("Token limit reached. Waiting for reset.");
@@ -78,29 +78,52 @@ async function sendBrevoEmailWithLimit(request: BrevoEmailRequest, estimatedToke
             const response = await fetch(`${BREVO_API_URL}/smtp/email`, {
                 method: 'POST',
                 headers: {
-                    'api-key': process.env.BREVO_API_KEY,
-                    'content-type': 'application/json',
                     'accept': 'application/json',
+                    'api-key': process.env.BREVO_API_KEY || '',
+                    'content-type': 'application/json'
                 },
-                body: JSON.stringify(request),
+                body: JSON.stringify(request)
             });
 
             if (response.status === 429) {
-                const retryAfter = parseInt(response.headers.get("Retry-After"), 10) || 60;
+                const retryAfter = parseInt(response.headers.get("Retry-After") || "60", 10);
                 console.log(`Rate limit exceeded. Retrying after ${retryAfter} seconds.`);
-                await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
-                return sendBrevoEmailWithLimit(request, estimatedTokens); // Retry
+                await sleep(retryAfter * 1000);
+                return sendBrevoEmailWithLimit(request, estimatedTokens);
             }
 
             if (!response.ok) {
-                throw new Error(`HTTP Error: ${response.status}`);
+                const errorData: BrevoErrorResponse = await response.json();
+                // Log to api_error_logs table
+                await getSupabaseAdmin().from('api_error_logs').insert({
+                    endpoint: `${BREVO_API_URL}/smtp/email`,
+                    method: 'POST',
+                    error_message: errorData.message,
+                    error_code: errorData.code,
+                    metadata: {
+                        status: response.status,
+                        headers: Object.fromEntries(response.headers.entries())
+                    }
+                });
+                throw new APIError(`Brevo API Error: ${errorData.message}`, response.status);
             }
 
-            tokenUsage += estimatedTokens; // Increment token usage
-            return await response.json();
+            tokenUsage += estimatedTokens;
+            const data: BrevoEmailResponse = await response.json();
+            return data;
         } catch (error) {
-            console.error("Request error:", error.message);
-            throw error;
+            if (error instanceof APIError) {
+                throw error;
+            }
+            // Log unexpected errors
+            await getSupabaseAdmin().from('api_error_logs').insert({
+                endpoint: `${BREVO_API_URL}/smtp/email`,
+                method: 'POST',
+                error_message: error.message,
+                stack_trace: error.stack,
+                metadata: { request }
+            });
+            throw new APIError(`Unexpected error sending email: ${error.message}`);
         }
     });
 }
