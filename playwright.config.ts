@@ -5,22 +5,6 @@ import { join } from 'path';
 // Load test environment variables
 dotenv.config({ path: join(process.cwd(), '.env.test') });
 
-// Ensure required environment variables are set
-const requiredEnvVars = [
-  'OPENAI_API_KEY',
-  'SUPABASE_URL',
-  'SUPABASE_SERVICE_ROLE_KEY',
-  'BREVO_API_KEY',
-  'BREVO_SENDER_EMAIL',
-  'BREVO_SENDER_NAME'
-];
-
-for (const envVar of requiredEnvVars) {
-  if (!process.env[envVar]) {
-    throw new Error(`Required environment variable ${envVar} is not set`);
-  }
-}
-
 export default defineConfig({
   testDir: './tests',
   timeout: 30000,
@@ -35,10 +19,6 @@ export default defineConfig({
   use: {
     actionTimeout: 0,
     trace: 'on-first-retry',
-    // Set NODE_ENV for tests
-    env: {
-      NODE_ENV: 'test',
-    },
   },
   projects: [
     {
