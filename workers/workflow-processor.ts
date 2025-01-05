@@ -1,10 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import * as dotenv from 'dotenv';
-import { join } from 'path';
 import OpenAI from 'openai';
-
-// Load environment variables from .env.local
-dotenv.config({ path: join(process.cwd(), '.env.local') });
 
 // Verify required environment variables
 const requiredEnvVars = [

@@ -5,7 +5,6 @@ import { APIError } from '@/utils/errors';
 import { withErrorHandler } from '@/utils/api-middleware';
 
 // Configure API route
-export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
 
 interface GenerateRequest {

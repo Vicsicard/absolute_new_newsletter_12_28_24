@@ -1,10 +1,6 @@
 import OpenAI from 'openai';
 import { APIError } from './errors';
-import * as dotenv from 'dotenv';
 import { join } from 'path';
-
-// Load environment variables from .env.local
-dotenv.config({ path: join(process.cwd(), '.env.local') });
 
 // Initialize OpenAI client
 const openai = new OpenAI({

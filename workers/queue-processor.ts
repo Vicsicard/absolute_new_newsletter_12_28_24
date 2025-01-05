@@ -1,6 +1,4 @@
 import { createClient, PostgrestError } from '@supabase/supabase-js';
-import * as dotenv from 'dotenv';
-import { join } from 'path';
 import { Database } from '../types/database';
 import { generateNewsletter } from '../utils/newsletter';
 import { sendNewsletterDraft } from '../utils/email';
@@ -8,9 +6,6 @@ import { WorkflowState, WorkflowStepStatus, WorkflowStep } from '../types/workfl
 import { QueueItemStatus } from '../types/email';
 import { WORKFLOW_STEPS, updateWorkflowStatus, advanceWorkflow, isStepComplete } from '../utils/workflow';
 import { logWorkflowEvent, logWorkflowError } from '../utils/monitoring';
-
-// Load environment variables from .env.local
-dotenv.config({ path: join(process.cwd(), '.env.local') });
 
 // Verify required environment variables
 const requiredEnvVars = [
