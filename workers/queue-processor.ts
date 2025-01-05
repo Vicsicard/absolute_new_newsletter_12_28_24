@@ -4,12 +4,27 @@ import { join } from 'path';
 import { Database } from '../types/database';
 import { generateNewsletter } from '../utils/newsletter';
 import { sendNewsletterDraft } from '../utils/email';
-import { WorkflowState, WorkflowStepStatus } from '../types/workflow';
+import { WorkflowState, WorkflowStepStatus, WorkflowStep } from '../types/workflow';
+import { QueueItemStatus } from '../types/email';
 import { WORKFLOW_STEPS, updateWorkflowStatus, advanceWorkflow, isStepComplete } from '../utils/workflow';
 import { logWorkflowEvent, logWorkflowError } from '../utils/monitoring';
 
-// Load environment variables
+// Load environment variables from .env.local
 dotenv.config({ path: join(process.cwd(), '.env.local') });
+
+// Verify required environment variables
+const requiredEnvVars = [
+  'OPENAI_API_KEY',
+  'SUPABASE_URL',
+  'SUPABASE_SERVICE_ROLE_KEY',
+  'BREVO_API_KEY'
+];
+
+for (const envVar of requiredEnvVars) {
+  if (!process.env[envVar]) {
+    throw new Error(`Missing required environment variable: ${envVar}`);
+  }
+}
 
 // Constants for error handling and retries
 const MAX_ATTEMPTS = 3;
@@ -65,11 +80,44 @@ interface QueueItem {
   newsletter_id: string;
   section_type: string;
   section_number: number;
-  status: string;
+  status: QueueItemStatus;
   attempts: number;
   error_message: string | null;
   created_at: string | null;
   updated_at: string | null;
+}
+
+// Utility functions for error handling
+function checkShouldRetry(error: Error, attempts: number): boolean {
+  // Don't retry if we've hit the max attempts
+  if (attempts >= MAX_ATTEMPTS) return false;
+  
+  // Don't retry rate limit errors
+  if (error instanceof OpenAIError && error.statusCode === 429) return false;
+  
+  // Retry all other errors
+  return true;
+}
+
+// Utility function to detect anomalies in workflow
+async function detectAnomalies(workflow: WorkflowState): Promise<boolean> {
+  // Check for stalled workflows
+  const lastUpdateTime = new Date(workflow.updated_at).getTime();
+  const currentTime = Date.now();
+  const stalledThreshold = 30 * 60 * 1000; // 30 minutes
+  
+  if (currentTime - lastUpdateTime > stalledThreshold) {
+    console.warn(`Workflow ${workflow.id} appears to be stalled`);
+    return true;
+  }
+  
+  // Check for excessive retries
+  if (workflow.attempts > MAX_ATTEMPTS) {
+    console.warn(`Workflow ${workflow.id} has excessive retries`);
+    return true;
+  }
+  
+  return false;
 }
 
 // Exponential backoff for retries
@@ -90,13 +138,12 @@ async function logError(error: Error, context: Record<string, any> = {}) {
 
 async function updateQueueItemStatus(
   item: QueueItem,
-  status: QueueItem['status'],
+  status: QueueItemStatus,
   error?: Error
 ) {
-  const updates: Database['public']['Tables']['newsletter_generation_queue']['Update'] = {
+  const updates: Partial<QueueItem> = {
     status,
     updated_at: new Date().toISOString(),
-    last_attempt_at: new Date().toISOString(),
     attempts: item.attempts + 1
   };
 
@@ -120,7 +167,7 @@ async function checkHealthAndRecover() {
     .from('newsletter_generation_queue')
     .select('*')
     .eq('status', 'in_progress')
-    .lt('last_attempt_at', new Date(Date.now() - 15 * 60 * 1000).toISOString()); // 15 minutes
+    .lt('updated_at', new Date(Date.now() - 15 * 60 * 1000).toISOString()); // 15 minutes
 
   if (queryError) {
     throw new DatabaseError('Failed to query stuck items', queryError);
@@ -144,15 +191,13 @@ async function acquireNextQueueItem(): Promise<QueueItem | null> {
     .select(`
       *,
       newsletters!inner (
-        workflow:newsletter_workflows!inner (
+        workflow:newsletter_workflows(
           current_step,
           step_status
         )
       )
     `)
     .eq('status', 'pending')
-    .eq('newsletters.workflow.step_status', 'pending')
-    .order('priority', { ascending: true })
     .order('created_at', { ascending: true })
     .limit(1);
 
@@ -160,7 +205,40 @@ async function acquireNextQueueItem(): Promise<QueueItem | null> {
     throw new DatabaseError('Failed to query queue items', queryError);
   }
 
-  return items?.[0] || null;
+  if (!items || items.length === 0) {
+    return null;
+  }
+
+  const item = items[0];
+
+  // If no workflow exists yet, create one
+  if (!item.newsletters?.workflow || item.newsletters.workflow.length === 0) {
+    const { error: workflowError } = await supabase
+      .from('newsletter_workflows')
+      .insert({
+        newsletter_id: item.newsletter_id,
+        current_step: 'INITIALIZE',
+        step_status: 'pending',
+        attempts: 0,
+        error_message: null
+      });
+
+    if (workflowError) {
+      throw new DatabaseError('Failed to create workflow', workflowError);
+    }
+  }
+
+  // Mark the item as in progress
+  const { error: updateError } = await supabase
+    .from('newsletter_generation_queue')
+    .update({ status: 'in_progress' })
+    .eq('id', item.id);
+
+  if (updateError) {
+    throw new DatabaseError('Failed to update queue item status', updateError);
+  }
+
+  return item;
 }
 
 async function processItemContent(item: QueueItem, workflow: any) {
@@ -198,6 +276,7 @@ async function processItemContent(item: QueueItem, workflow: any) {
 async function processQueueItem(item: QueueItem): Promise<void> {
   console.log(`Processing queue item ${item.id} (${item.section_type})`);
   const startTime = Date.now();
+  let willRetry = false;
   
   try {
     // Get workflow state
@@ -224,8 +303,8 @@ async function processQueueItem(item: QueueItem): Promise<void> {
     });
 
     // Validate current step
-    const step = WORKFLOW_STEPS[workflow.current_step];
-    if (!await step.validates(item.newsletter_id)) {
+    const step = WORKFLOW_STEPS[workflow.current_step as WorkflowStep];
+    if (step.validates && !await step.validates(item.newsletter_id)) {
       throw new Error('Workflow validation failed');
     }
 
@@ -260,7 +339,7 @@ async function processQueueItem(item: QueueItem): Promise<void> {
       await updateWorkflowStatus(workflow.id, 'completed');
       
       // Log workflow completion if this was the last step
-      if (!WORKFLOW_STEPS[workflow.current_step].next) {
+      if (!WORKFLOW_STEPS[workflow.current_step as WorkflowStep].next) {
         await logWorkflowEvent({
           workflow_id: workflow.id,
           newsletter_id: item.newsletter_id,
@@ -290,13 +369,12 @@ async function processQueueItem(item: QueueItem): Promise<void> {
 
     if (workflow) {
       // Determine if we should retry based on error type and attempts
-      const shouldRetry = workflow.attempts < MAX_ATTEMPTS && 
-        !(error instanceof OpenAIError && error.statusCode === 429);
+      willRetry = checkShouldRetry(errorInstance, workflow.attempts);
 
       // Update workflow status
       await updateWorkflowStatus(
         workflow.id,
-        shouldRetry ? 'pending' : 'failed',
+        willRetry ? 'pending' : 'failed',
         errorInstance
       );
 
@@ -309,12 +387,12 @@ async function processQueueItem(item: QueueItem): Promise<void> {
           queue_item_id: item.id,
           section_type: item.section_type,
           attempts: workflow.attempts,
-          will_retry: shouldRetry
+          will_retry: willRetry
         }
       });
 
       // Log workflow failure if we're not retrying
-      if (!shouldRetry) {
+      if (!willRetry) {
         await logWorkflowEvent({
           workflow_id: workflow.id,
           newsletter_id: item.newsletter_id,
@@ -334,11 +412,11 @@ async function processQueueItem(item: QueueItem): Promise<void> {
     // Update queue item status
     await updateQueueItemStatus(
       item,
-      shouldRetry ? 'pending' : 'failed',
+      willRetry ? 'pending' : 'failed',
       errorInstance
     );
 
-    if (!shouldRetry) {
+    if (!willRetry) {
       console.log(`Queue item ${item.id} has failed permanently after ${workflow?.attempts ?? 0} attempts`);
     }
   }
@@ -423,13 +501,32 @@ console.log('Starting queue monitor...\n');
 runWorker();
 
 // Add health check function
-async function checkWorkflowHealth(): Promise<void> {
-  try {
-    await detectAnomalies();
-  } catch (error) {
-    console.error('Failed to check workflow health:', error);
+async function checkWorkflowHealth(workflowId?: string): Promise<void> {
+  const query = supabase
+    .from('newsletter_workflows')
+    .select('*')
+    .eq('step_status', 'in_progress');
+
+  if (workflowId) {
+    query.eq('id', workflowId);
+  }
+
+  const { data: workflows } = await query;
+
+  if (workflows) {
+    for (const workflow of workflows) {
+      if (await detectAnomalies(workflow)) {
+        console.warn(`Anomalies detected in workflow ${workflow.id}`);
+        // TODO: Implement recovery logic
+      }
+    }
   }
 }
 
 // Run health check every 5 minutes
-setInterval(checkWorkflowHealth, 5 * 60 * 1000);
+setInterval(() => checkWorkflowHealth(), 5 * 60 * 1000);
+
+// Start the worker if this is the main module
+if (require.main === module) {
+  runWorker();
+}

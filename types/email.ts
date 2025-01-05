@@ -10,6 +10,7 @@ export type NewsletterSectionStatus = 'active' | 'deleted';
 export type ImageGenerationStatus = 'pending' | 'processing' | 'completed' | 'failed';
 export type CsvUploadStatus = 'pending' | 'processing' | 'completed' | 'failed';
 export type CompiledNewsletterStatus = 'draft' | 'ready' | 'sent' | 'error';
+export type QueueItemStatus = 'pending' | 'in_progress' | 'completed' | 'failed';
 
 // Base types from database
 export type Company = {

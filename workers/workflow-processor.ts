@@ -1,9 +1,24 @@
 import { createClient } from '@supabase/supabase-js';
 import * as dotenv from 'dotenv';
+import { join } from 'path';
 import OpenAI from 'openai';
 
-// Load environment variables
-dotenv.config({ path: '.env.local' });
+// Load environment variables from .env.local
+dotenv.config({ path: join(process.cwd(), '.env.local') });
+
+// Verify required environment variables
+const requiredEnvVars = [
+  'OPENAI_API_KEY',
+  'SUPABASE_URL',
+  'SUPABASE_SERVICE_ROLE_KEY',
+  'BREVO_API_KEY'
+];
+
+for (const envVar of requiredEnvVars) {
+  if (!process.env[envVar]) {
+    throw new Error(`Missing required environment variable: ${envVar}`);
+  }
+}
 
 // Initialize clients
 const supabase = createClient(
@@ -15,27 +30,37 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
+// Workflow step interface
+interface WorkflowStepConfig {
+  name: string;
+  table: string;
+  handler: (process: WorkflowProcess) => Promise<boolean>;
+  next_steps: readonly string[];
+  required_status: string;
+  section_number?: number;
+}
+
 // Workflow step definitions
 const WORKFLOW_STEPS = {
   NEWSLETTER_INIT: {
     name: 'newsletter_init',
     table: 'newsletters',
     handler: handleNewsletterInit,
-    next_steps: ['QUEUE_GENERATION'],
+    next_steps: ['QUEUE_GENERATION'] as const,
     required_status: 'draft'
   },
   QUEUE_GENERATION: {
     name: 'queue_generation',
     table: 'newsletter_generation_queue',
     handler: handleQueueGeneration,
-    next_steps: ['SECTION_1_GEN'],
+    next_steps: ['SECTION_1_GEN'] as const,
     required_status: 'pending'
   },
   SECTION_1_GEN: {
     name: 'section_1_gen',
     table: 'newsletter_sections',
     handler: handleSectionGeneration,
-    next_steps: ['SECTION_2_GEN'],
+    next_steps: ['SECTION_2_GEN'] as const,
     required_status: 'pending',
     section_number: 1
   },
@@ -43,7 +68,7 @@ const WORKFLOW_STEPS = {
     name: 'section_2_gen',
     table: 'newsletter_sections',
     handler: handleSectionGeneration,
-    next_steps: ['SECTION_3_GEN'],
+    next_steps: ['SECTION_3_GEN'] as const,
     required_status: 'pending',
     section_number: 2
   },
@@ -51,7 +76,7 @@ const WORKFLOW_STEPS = {
     name: 'section_3_gen',
     table: 'newsletter_sections',
     handler: handleSectionGeneration,
-    next_steps: ['NEWSLETTER_COMPILE'],
+    next_steps: ['NEWSLETTER_COMPILE'] as const,
     required_status: 'pending',
     section_number: 3
   },
@@ -59,31 +84,31 @@ const WORKFLOW_STEPS = {
     name: 'newsletter_compile',
     table: 'compiled_newsletters',
     handler: handleNewsletterCompile,
-    next_steps: ['DRAFT_REVIEW'],
+    next_steps: ['DRAFT_REVIEW'] as const,
     required_status: 'pending'
   },
   DRAFT_REVIEW: {
     name: 'draft_review',
     table: 'newsletters',
     handler: handleDraftReview,
-    next_steps: ['AWAIT_APPROVAL'],
+    next_steps: ['AWAIT_APPROVAL'] as const,
     required_status: 'ready_to_send'
   },
   AWAIT_APPROVAL: {
     name: 'await_approval',
     table: 'newsletters',
     handler: handleAwaitApproval,
-    next_steps: ['FINAL_SEND'],
+    next_steps: ['FINAL_SEND'] as const,
     required_status: 'draft_sent'
   },
   FINAL_SEND: {
     name: 'final_send',
     table: 'newsletters',
     handler: handleFinalSend,
-    next_steps: [],
+    next_steps: [] as const,
     required_status: 'pending_contacts'
   }
-} as const;
+} as const satisfies Record<string, WorkflowStepConfig>;
 
 type WorkflowStep = keyof typeof WORKFLOW_STEPS;
 
@@ -157,7 +182,12 @@ async function handleQueueGeneration(process: WorkflowProcess) {
 }
 
 async function handleSectionGeneration(process: WorkflowProcess) {
-  const step = WORKFLOW_STEPS[process.current_step];
+  const step = WORKFLOW_STEPS[process.current_step as WorkflowStep];
+  
+  // Type guard for section generation steps
+  if (!('section_number' in step)) {
+    throw new Error('Step requires section_number but none was provided');
+  }
   
   // Get the queue item for this section
   const { data: queueItem } = await supabase
@@ -277,7 +307,7 @@ async function processWorkflow() {
       for (const process of processes) {
         try {
           // Get current step configuration
-          const step = WORKFLOW_STEPS[process.current_step];
+          const step = WORKFLOW_STEPS[process.current_step as WorkflowStep];
 
           // Update process to in_progress
           await supabase
@@ -352,7 +382,7 @@ async function processWorkflow() {
             .from('workflow_step_logs')
             .insert({
               process_id: process.id,
-              step_name: WORKFLOW_STEPS[process.current_step].name,
+              step_name: WORKFLOW_STEPS[process.current_step as WorkflowStep].name,
               status: 'failed',
               error_message: error.message
             });

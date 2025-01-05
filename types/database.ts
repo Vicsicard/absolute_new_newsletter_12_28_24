@@ -16,6 +16,7 @@ export type SectionType = 'welcome' | 'industry_trends' | 'practical_tips';
 export type ImageGenerationStatus = 'pending' | 'processing' | 'completed' | 'failed';
 export type CsvUploadStatus = 'pending' | 'processing' | 'completed' | 'failed';
 export type CompiledNewsletterStatus = 'draft' | 'ready' | 'sent' | 'error';
+export type WorkflowStepStatus = 'pending' | 'in_progress' | 'completed' | 'failed';
 
 export interface Database {
   public: {
@@ -326,6 +327,35 @@ export interface Database {
           section_number?: number;
           status?: NewsletterSectionStatus;
           attempts?: number;
+          error_message?: string | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+      };
+      newsletter_workflows: {
+        Row: {
+          id: string;
+          newsletter_id: string;
+          current_step: string;
+          step_status: WorkflowStepStatus;
+          error_message: string | null;
+          created_at: string | null;
+          updated_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          newsletter_id: string;
+          current_step: string;
+          step_status?: WorkflowStepStatus;
+          error_message?: string | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          newsletter_id?: string;
+          current_step?: string;
+          step_status?: WorkflowStepStatus;
           error_message?: string | null;
           created_at?: string | null;
           updated_at?: string | null;

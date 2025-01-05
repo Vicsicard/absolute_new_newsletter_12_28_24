@@ -71,6 +71,7 @@
    - Trigger: `handle_newsletter_initialization`
    - Creates queue items and section placeholders
    - Sets initial states for processing
+   - Note: Trigger is temporarily disabled during test data setup
 
 2. **Queue Processing**
    - Trigger: `handle_queue_status_transition`
@@ -84,6 +85,29 @@
    - Tracks all state transitions
    - Records timing of each step
    - Enables debugging and monitoring
+
+### Test Data Setup
+
+1. **Database Cleanup**
+   - Proper order of deletion to handle foreign key constraints:
+     1. Delete workflow_logs (references newsletters)
+     2. Delete email_queue (references newsletters)
+     3. Delete newsletter_generation_queue (references newsletters)
+     4. Delete newsletter_workflows (references newsletters)
+     5. Delete compiled_newsletters (references newsletters)
+     6. Delete image_generation_history (references newsletter_sections)
+     7. Delete newsletter_sections (references newsletters)
+     8. Delete newsletter_contacts (references newsletters)
+     9. Delete newsletters
+     10. Delete companies
+
+2. **Test Data Creation**
+   - Creates test company "TechCorp Solutions"
+   - Creates draft newsletter
+   - Creates three sections (welcome, industry_trends, practical_tips)
+   - Creates corresponding queue items
+   - All items start in 'pending' status
+   - Located in: `/test/setup_test_data.sql`
 
 ### Workflow Steps (Automated)
 
@@ -99,87 +123,47 @@
    - Automatic progression through sections
    - Each section moves through states:
      - `pending` → `in_progress` → `completed`
-   - Queue items mirror section states
-   - Next section automatically triggered on completion
 
-3. **Completion and Email Distribution**
-   - All sections completed triggers:
-     1. Newsletter status update to `draft_sent`
-     2. Retrieval of company contact email
-     3. Creation of email queue entry
-     4. Logging of email queuing action
-   - Email queue states:
-     - `pending` → `sent` / `error`
-   - Full audit trail of email sending process
+### Testing Process
 
-### Database Schema
+1. **Setup Test Environment**
+   - Run `/test/setup_test_data.sql`
+   - Verify data creation with diagnostic queries:
+     ```sql
+     -- Check newsletter and company
+     SELECT n.subject, n.status, n.draft_status, c.company_name
+     FROM newsletters n
+     JOIN companies c ON n.company_id = c.id
+     WHERE c.company_name = 'TechCorp Solutions';
 
-1. **Core Tables**
-   - `newsletters`: Main newsletter information
-   - `newsletter_sections`: Individual section content
-   - `newsletter_generation_queue`: Processing queue
-   - `workflow_logs`: State transition logging
-   - `email_queue`: Email distribution management
+     -- Check sections
+     SELECT ns.section_number, ns.section_type, ns.status as section_status, ns.title
+     FROM newsletter_sections ns
+     JOIN newsletters n ON ns.newsletter_id = n.id
+     JOIN companies c ON n.company_id = c.id
+     WHERE c.company_name = 'TechCorp Solutions'
+     ORDER BY ns.section_number;
 
-2. **Email Queue Table**
-   ```sql
-   CREATE TABLE email_queue (
-       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-       newsletter_id UUID REFERENCES newsletters(id),
-       recipient_email TEXT NOT NULL,
-       status TEXT NOT NULL DEFAULT 'pending',
-       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-       updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-       sent_at TIMESTAMP WITH TIME ZONE,
-       error_message TEXT
-   );
-   ```
+     -- Check queue items
+     SELECT nq.section_type, nq.section_number, nq.status as queue_status, nq.attempts
+     FROM newsletter_generation_queue nq
+     JOIN newsletters n ON nq.newsletter_id = n.id
+     JOIN companies c ON n.company_id = c.id
+     WHERE c.company_name = 'TechCorp Solutions'
+     ORDER BY nq.section_number;
+     ```
 
-### Monitoring and Verification
+2. **Monitor Processing**
+   - Watch queue items progress through states
+   - Verify section content generation
+   - Check email delivery
+   - Monitor for any errors or delays
 
-1. **Status Checks**
-   - All sections completed (3/3)
-   - Queue items processed (3/3)
-   - Newsletter status: `draft_sent`
-   - Email queued for sending
-   - Workflow logs show transitions
+3. **Cleanup After Testing**
+   - Re-run setup script to reset test data
+   - Or manually clean up using DELETE statements in proper order
 
-2. **Common Monitoring Queries**
-   ```sql
-   -- Check newsletter completion
-   SELECT 
-       COUNT(*) as total_sections,
-       COUNT(*) FILTER (WHERE s.status = 'completed') as completed_sections
-   FROM newsletters n
-   JOIN newsletter_sections s ON s.newsletter_id = n.id
-   WHERE n.subject = '[Newsletter Subject]'
-   GROUP BY n.draft_status;
-
-   -- Check email status
-   SELECT status, created_at, sent_at 
-   FROM email_queue 
-   WHERE newsletter_id = '[Newsletter ID]';
-   ```
-
-### Error Handling
-
-1. **Status Validation**
-   - Unique constraints prevent duplicate processing
-   - Status changes logged for debugging
-   - Clear state progression tracking
-
-2. **Transaction Safety**
-   - All state changes wrapped in transactions
-   - Prevents partial updates
-   - Maintains data consistency
-
-3. **Email Error Handling**
-   - Failed emails tracked in email_queue
-   - Error messages stored for debugging
-   - Retry mechanism available
-
-## Current Status: ✅ Fully Automated
-
+## Current Status: 
 - Sequential processing working correctly
 - Automatic state transitions implemented
 - Email queuing integrated
@@ -189,61 +173,47 @@
 ## Current Status (Updated: 2025-01-04)
 
 ### Core Components
-✅ OpenAI Integration
-- Using GPT-4 for content generation
-- Using DALL-E 3 for image generation
-- Proper error handling and retries
-
-✅ Queue Management
-- Proper initialization
-- Status tracking
-- Error handling
-- Cleanup utilities
-
-✅ Email Integration
-- Brevo API integration
-- HTML email templates
-- Automatic draft sending
-- Status updates
-- **Email sending functionality tested successfully**
+- OpenAI Integration
+- Queue Management
+- Email Integration
 
 ### Process Flow
 1. Newsletter Creation
    - Creates company and newsletter records
    - Initializes sections
-   - Status: ✅ Working
+   - Status: Working
 
 2. Queue Management
    - Creates queue items for each section
    - Tracks processing status
-   - Status: ✅ Working
+   - Status: Working
 
 3. Content Generation
    - Uses GPT-4 for section content
    - Extracts titles and formats content
-   - Status: ✅ Working
+   - Status: Working
 
 4. Image Generation
    - Uses DALL-E 3 for section images
    - Creates abstract, professional visuals
-   - Status: ✅ Working
+   - Status: Working
 
 5. Email Delivery
    - Sends drafts via Brevo
    - Updates newsletter status
-   - Status: ✅ Working
+   - Status: Working
 
 ### Scripts and Tools
-- `workflow-processor.js`: Main worker process ✅
-- `test-workflow.js`: Testing utility ✅
-- `cleanup-newsletters.js`: Database cleanup utility ✅
+- `workflow-processor.js`: Main worker process 
+- `test-workflow.js`: Testing utility 
+- `cleanup-newsletters.js`: Database cleanup utility 
 
 ### Testing Status
-- Basic workflow: ✅ Tested
-- Content generation: ✅ Tested
-- Image generation: ✅ Tested
-- Email delivery: ✅ Tested
-- Error handling: ✅ Basic Implementation
+- Basic workflow: Tested
+- Content generation: Tested
+- Image generation: Tested
+- Email delivery: Tested
+- Error handling: Basic Implementation
 
 ### Environment Requirements
 Required variables in `.env.local`:
@@ -264,25 +234,25 @@ Required variables in `.env.local`:
    - Add timing information
    - Track API usage
    - Monitor rate limits
-   - Status: 🔄 Planned
+   - Status: Planned
 
 2. **Error Handling**
    - Add comprehensive retry mechanism
    - Add error reporting
    - Add alerting system
-   - Status: 🔄 Planned
+   - Status: Planned
 
 3. **Performance**
    - Add caching
    - Optimize database queries
    - Add rate limiting
-   - Status: 🔄 Planned
+   - Status: Planned
 
 4. **User Interface**
    - Add progress visualization
    - Add content preview
    - Add manual controls
-   - Status: 🔄 Planned
+   - Status: Planned
 
 ### Running the System
 
@@ -335,6 +305,100 @@ Required variables in `.env.local`:
    - Real-time updates
    - Row level security
    - Foreign key constraints
+
+## Newsletter Workflow Process
+
+## Overview
+The newsletter generation and delivery process follows a structured workflow with multiple stages and status transitions.
+
+## Workflow Stages
+
+### 1. Content Generation
+- Sections are processed in order: welcome → industry_trends → practical_tips
+- Each section moves through states: pending → in_progress → completed
+- Automatic progression to next section via database triggers
+- All sections must be completed before compilation
+
+### 2. Newsletter Compilation
+- Triggers when all sections are completed
+- Combines section content into HTML format
+- Creates entry in `compiled_newsletters` table
+- Sets compiled_status to 'ready' when complete
+
+### 3. Email Queue Management
+- Creates queue entries for all active contacts
+- Tracks delivery status per recipient
+- Updates sent_at timestamp on successful delivery
+- Handles individual recipient status tracking
+
+### 4. Status Transitions
+Newsletter Status:
+- draft → published → archived
+
+Draft Status:
+- draft → ready_to_send → sending → sent
+
+Section Status:
+- pending → in_progress → completed
+
+Email Status:
+- pending → sent (or failed)
+
+## Testing and Verification
+
+### Test Data Setup
+- Use `setup_test_data.sql` for creating test environment
+- Creates test company and newsletter
+- Initializes sections and queue items
+
+### Status Verification Queries
+```sql
+-- Check newsletter status
+SELECT 
+    n.subject,
+    n.status as newsletter_status,
+    n.draft_status,
+    eq.recipient_email,
+    eq.status as email_status,
+    eq.sent_at,
+    cn.compiled_status
+FROM newsletters n
+JOIN companies c ON n.company_id = c.id
+JOIN email_queue eq ON eq.newsletter_id = n.id
+JOIN compiled_newsletters cn ON cn.newsletter_id = n.id
+WHERE c.company_name = '[COMPANY_NAME]';
+
+-- Check section completion
+SELECT 
+    section_type,
+    section_number,
+    status,
+    updated_at
+FROM newsletter_sections
+WHERE newsletter_id = '[NEWSLETTER_ID]'
+ORDER BY section_number;
+```
+
+## Error Handling
+- Failed sections remain in 'failed' status
+- Email delivery failures tracked in email_queue
+- Error messages stored for debugging
+- Retry mechanism for failed queue items
+
+## Best Practices
+1. Always verify section completion before compilation
+2. Monitor email queue status for delivery issues
+3. Check error messages for failed items
+4. Use test data for workflow verification
+5. Maintain proper status transitions
+
+## Monitoring
+- Track section completion times
+- Monitor email delivery success rates
+- Check for stuck items in queue
+- Review error logs regularly
+
+Last Updated: January 4, 2025
 
 ## Database Changes Needed
 

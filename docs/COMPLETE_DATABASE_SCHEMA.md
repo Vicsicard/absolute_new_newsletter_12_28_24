@@ -126,6 +126,19 @@ CREATE TABLE compiled_newsletters (
 );
 ```
 
+### Newsletter Workflows
+```sql
+CREATE TABLE newsletter_workflows (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    newsletter_id UUID REFERENCES newsletters(id),
+    current_step TEXT NOT NULL,
+    step_status TEXT DEFAULT 'pending',
+    error_message TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
 ### Newsletter Generation Queue
 ```sql
 CREATE TABLE newsletter_generation_queue (
@@ -232,6 +245,11 @@ CREATE TABLE api_error_logs (
 - `compiled_newsletters_pkey`: Primary key on `id`
 - `compiled_newsletters_newsletter_id_key`: Unique index on `newsletter_id`
 - `idx_compiled_newsletters_status`: Index on `compiled_status`
+
+### Newsletter Workflows
+- `newsletter_workflows_pkey`: Primary key on `id`
+- `newsletter_workflows_newsletter_id_key`: Unique index on `newsletter_id`
+- `idx_newsletter_workflows_status`: Index on `step_status`
 
 ### Newsletter Generation Queue
 - `newsletter_generation_queue_pkey`: Primary key on `id`

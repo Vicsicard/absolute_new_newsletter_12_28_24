@@ -56,3 +56,5 @@ Thumbs.db
 
 # Temporary directories
 /temp-repo/
+
+.vercel

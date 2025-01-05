@@ -1,15 +1,21 @@
 import OpenAI from 'openai';
 import { APIError } from './errors';
+import * as dotenv from 'dotenv';
+import { join } from 'path';
 
-if (!process.env.OPENAI_API_KEY) {
-  throw new Error('Missing OPENAI_API_KEY environment variable');
-}
+// Load environment variables from .env.local
+dotenv.config({ path: join(process.cwd(), '.env.local') });
 
+// Initialize OpenAI client
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
+  apiKey: process.env.OPENAI_API_KEY || ''
 });
 
 export async function generateImage(prompt: string, retries = 2): Promise<string | null> {
+  if (!process.env.OPENAI_API_KEY) {
+    throw new APIError('Missing OPENAI_API_KEY environment variable', 500);
+  }
+
   for (let i = 0; i < retries; i++) {
     try {
       const response = await openai.images.generate({

@@ -1,24 +1,18 @@
 import { Database } from './database';
 
-export type WorkflowStepStatus = 'pending' | 'in_progress' | 'completed' | 'failed';
+export type WorkflowStep = 'INITIALIZE' | 'WELCOME_SECTION' | 'TRENDS_SECTION' | 'TIPS_SECTION' | 'COMPILE' | 'SEND_DRAFT' | 'COMPLETE';
 
-export type WorkflowStep = 
-  | 'INIT'
-  | 'WELCOME_SECTION'
-  | 'TRENDS_SECTION'
-  | 'TIPS_SECTION'
-  | 'COMPILE'
-  | 'SEND_DRAFT'
-  | 'COMPLETE';
+export type WorkflowStepStatus = 'pending' | 'in_progress' | 'completed' | 'failed';
 
 export interface WorkflowStepConfig {
   name: string;
   next: WorkflowStep | null;
-  validates: (newsletterId: string) => Promise<boolean>;
+  section_number?: number;
   queueItems?: Array<{
     type: string;
     section_number: number;
   }>;
+  validates?: (newsletterId: string) => Promise<boolean>;
 }
 
 export interface WorkflowState {

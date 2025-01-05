@@ -8,10 +8,10 @@ const supabase = createClient<Database>(
 );
 
 export const WORKFLOW_STEPS: Record<WorkflowStep, WorkflowStepConfig> = {
-  INIT: {
+  INITIALIZE: {
     name: 'initialize',
     next: 'WELCOME_SECTION',
-    validates: async (newsletterId) => {
+    validates: async (newsletterId: string) => {
       const { data: newsletter } = await supabase
         .from('newsletters')
         .select('status, draft_status')
@@ -24,7 +24,7 @@ export const WORKFLOW_STEPS: Record<WorkflowStep, WorkflowStepConfig> = {
   WELCOME_SECTION: {
     name: 'welcome_section',
     next: 'TRENDS_SECTION',
-    validates: async (newsletterId) => {
+    validates: async (newsletterId: string) => {
       const { data: workflow } = await supabase
         .from('newsletter_workflows')
         .select('current_step, step_status')
@@ -40,7 +40,7 @@ export const WORKFLOW_STEPS: Record<WorkflowStep, WorkflowStepConfig> = {
   TRENDS_SECTION: {
     name: 'trends_section',
     next: 'TIPS_SECTION',
-    validates: async (newsletterId) => {
+    validates: async (newsletterId: string) => {
       const { data: sections } = await supabase
         .from('newsletter_sections')
         .select('status')
@@ -56,7 +56,7 @@ export const WORKFLOW_STEPS: Record<WorkflowStep, WorkflowStepConfig> = {
   TIPS_SECTION: {
     name: 'tips_section',
     next: 'COMPILE',
-    validates: async (newsletterId) => {
+    validates: async (newsletterId: string) => {
       const { data: sections } = await supabase
         .from('newsletter_sections')
         .select('status')
@@ -72,7 +72,7 @@ export const WORKFLOW_STEPS: Record<WorkflowStep, WorkflowStepConfig> = {
   COMPILE: {
     name: 'compile',
     next: 'SEND_DRAFT',
-    validates: async (newsletterId) => {
+    validates: async (newsletterId: string) => {
       const { data: sections } = await supabase
         .from('newsletter_sections')
         .select('status')
@@ -84,7 +84,7 @@ export const WORKFLOW_STEPS: Record<WorkflowStep, WorkflowStepConfig> = {
   SEND_DRAFT: {
     name: 'send_draft',
     next: 'COMPLETE',
-    validates: async (newsletterId) => {
+    validates: async (newsletterId: string) => {
       const { data: newsletter } = await supabase
         .from('newsletters')
         .select('draft_status')
@@ -97,7 +97,7 @@ export const WORKFLOW_STEPS: Record<WorkflowStep, WorkflowStepConfig> = {
   COMPLETE: {
     name: 'complete',
     next: null,
-    validates: async (newsletterId) => {
+    validates: async (newsletterId: string) => {
       const { data: newsletter } = await supabase
         .from('newsletters')
         .select('draft_status')
@@ -124,7 +124,7 @@ export async function initializeWorkflow(newsletterId: string): Promise<Workflow
     .from('newsletter_workflows')
     .insert({
       newsletter_id: newsletterId,
-      current_step: 'INIT' as WorkflowStep,
+      current_step: 'INITIALIZE' as WorkflowStep,
       step_status: 'pending' as WorkflowStepStatus
     })
     .select()
@@ -138,16 +138,20 @@ export async function initializeWorkflow(newsletterId: string): Promise<Workflow
 }
 
 export async function updateWorkflowStatus(
-  workflowId: string,
+  newsletterId: string,
   status: WorkflowStepStatus,
   error?: Error
 ): Promise<WorkflowState> {
-  // First get the current attempts count
+  // Get current workflow
   const { data: currentWorkflow } = await supabase
     .from('newsletter_workflows')
-    .select('attempts')
-    .eq('id', workflowId)
+    .select('*')
+    .eq('newsletter_id', newsletterId)
     .single();
+
+  if (!currentWorkflow) {
+    throw new Error('Workflow not found');
+  }
 
   const updates: Partial<WorkflowState> = {
     step_status: status,
@@ -162,7 +166,7 @@ export async function updateWorkflowStatus(
   const { data: workflow, error: updateError } = await supabase
     .from('newsletter_workflows')
     .update(updates)
-    .eq('id', workflowId)
+    .eq('newsletter_id', newsletterId)
     .select()
     .single();
 
@@ -173,12 +177,12 @@ export async function updateWorkflowStatus(
   return workflow;
 }
 
-export async function advanceWorkflow(workflowId: string): Promise<WorkflowState> {
+export async function advanceWorkflow(newsletterId: string): Promise<WorkflowState> {
   // Get current workflow state
   const { data: workflow } = await supabase
     .from('newsletter_workflows')
     .select('*')
-    .eq('id', workflowId)
+    .eq('newsletter_id', newsletterId)
     .single();
 
   if (!workflow) {
@@ -199,29 +203,14 @@ export async function advanceWorkflow(workflowId: string): Promise<WorkflowState
       step_status: 'pending' as WorkflowStepStatus,
       attempts: 0,
       error_message: null,
-      step_data: null
+      updated_at: new Date().toISOString()
     })
-    .eq('id', workflowId)
+    .eq('newsletter_id', newsletterId)
     .select()
     .single();
 
   if (error || !updated) {
     throw new Error('Failed to advance workflow');
-  }
-
-  // If next step has queue items, create them
-  const nextStep = WORKFLOW_STEPS[currentStep.next as WorkflowStep];
-  if (nextStep.queueItems) {
-    for (const item of nextStep.queueItems) {
-      await supabase
-        .from('newsletter_generation_queue')
-        .insert({
-          newsletter_id: workflow.newsletter_id,
-          section_type: item.type,
-          section_number: item.section_number,
-          status: 'pending'
-        });
-    }
   }
 
   return updated;

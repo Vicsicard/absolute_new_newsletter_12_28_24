@@ -1,6 +1,6 @@
 import OpenAI from 'openai';
-import type { Database } from '@/types/database';
-import { NewsletterWithCompany, NewsletterSection, NewsletterSectionStatus } from '@/types/email';
+import type { Database } from '../types/database';
+import { NewsletterWithCompany, NewsletterSection, NewsletterSectionStatus } from '../types/email';
 import { getSupabaseAdmin } from './supabase-admin';
 import { APIError } from './errors';
 import { generateImage } from './image';
