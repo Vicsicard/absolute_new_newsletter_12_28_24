@@ -119,11 +119,11 @@ export async function sendBrevoEmailWithLimit(request: BrevoEmailRequest, estima
             await getSupabaseAdmin().from('api_error_logs').insert({
                 endpoint: `${BREVO_API_URL}/smtp/email`,
                 method: 'POST',
-                error_message: error.message,
-                stack_trace: error.stack,
+                error_message: error instanceof Error ? error.message : 'Unknown error',
+                stack_trace: error instanceof Error ? error.stack : undefined,
                 metadata: { request }
             });
-            throw new APIError(`Unexpected error sending email: ${error.message}`);
+            throw new APIError(`Unexpected error sending email: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
     });
 }
